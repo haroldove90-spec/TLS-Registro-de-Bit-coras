@@ -1,85 +1,48 @@
--- TLS Logistics - Base de Datos en Supabase (vkzzfccktctoljvkmwsz)
--- Script Corregido y Optimizado
+-- ==========================================================
+-- TLS LOGISTICS - CONFIGURACIÓN DE BASE DE DATOS Y STORAGE
+-- Instrucciones: Copia y pega TODO este código en el SQL Editor de Supabase
+-- ==========================================================
 
--- 0. Extensiones necesarias
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-
--- 1. Tabla de Operadores
-CREATE TABLE IF NOT EXISTS operadores (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  name TEXT NOT NULL,
-  plate TEXT UNIQUE NOT NULL,
-  status TEXT DEFAULT 'AVAILABLE',
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);
-
--- 2. Tabla de Viajes (Core del Negocio)
-CREATE TABLE IF NOT EXISTS viajes (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  code TEXT UNIQUE NOT NULL,
-  client TEXT NOT NULL,
-  project TEXT NOT NULL,
-  origin TEXT NOT NULL,
-  origin_maps_link TEXT,
-  origin_lat DECIMAL,
-  origin_lng DECIMAL,
-  destination TEXT NOT NULL,
-  destination_maps_link TEXT,
-  destination_lat DECIMAL,
-  destination_lng DECIMAL,
-  appointment TEXT NOT NULL, -- HH:MM AM/PM
-  date DATE DEFAULT CURRENT_DATE,
-  instructions TEXT,
-  status TEXT DEFAULT 'Por Aceptar',
-  plate TEXT REFERENCES operadores(plate),
-  current_stage_index INTEGER DEFAULT 0,
-  has_incident BOOLEAN DEFAULT FALSE,
-  evidence_status TEXT DEFAULT 'NONE',
-  rejection_reason TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);
-
--- 3. Tabla de Evidencias (Geoselladas)
+-- 1. Crear la tabla de evidencias si no existe
 CREATE TABLE IF NOT EXISTS evidencias_geoselladas (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  trip_id UUID REFERENCES viajes(id) ON DELETE CASCADE,
-  stage_index INTEGER NOT NULL,
-  url TEXT NOT NULL,
-  lat DECIMAL,
-  lng DECIMAL,
-  timestamp BIGINT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    trip_id TEXT NOT NULL,
+    stage_index INTEGER NOT NULL,
+    url TEXT NOT NULL,
+    lat DECIMAL,
+    lng DECIMAL,
+    timestamp BIGINT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 4. Tabla de Historial GPS (Bitácora de Ruta)
-CREATE TABLE IF NOT EXISTS historial_ubicaciones (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  trip_id UUID REFERENCES viajes(id) ON DELETE CASCADE,
-  lat DECIMAL NOT NULL,
-  lng DECIMAL NOT NULL,
-  type TEXT, -- CHECKIN, GAS, ARRIVAL, VALIDATION
-  label TEXT,
-  is_out_of_range BOOLEAN DEFAULT FALSE,
-  distance_to_target DECIMAL,
-  timestamp BIGINT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);
-
--- 5. CONFIGURACIÓN DE SEGURIDAD (RLS) - CORREGIDO
-ALTER TABLE operadores ENABLE ROW LEVEL SECURITY;
-ALTER TABLE viajes ENABLE ROW LEVEL SECURITY;
+-- 2. Habilitar Seguridad (RLS)
 ALTER TABLE evidencias_geoselladas ENABLE ROW LEVEL SECURITY;
-ALTER TABLE historial_ubicaciones ENABLE ROW LEVEL SECURITY;
 
--- 6. POLÍTICAS DE ACCESO (Permitir lectura/escritura pública para esta demo)
--- Nota: En producción, estas políticas se filtrarían por auth.uid()
-CREATE POLICY "Acceso total a operadores" ON operadores FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Acceso total a viajes" ON viajes FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Acceso total a evidencias" ON evidencias_geoselladas FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Acceso total a historial" ON historial_ubicaciones FOR ALL USING (true) WITH CHECK (true);
+-- 3. Políticas para la Tabla (Rol: anon)
+-- Nota: La app usa login simulado, por lo que las peticiones llegan como 'anon'
+DROP POLICY IF EXISTS "Lectura pública metadata" ON evidencias_geoselladas;
+CREATE POLICY "Lectura pública metadata" ON evidencias_geoselladas FOR SELECT TO public USING (true);
 
--- 7. Datos Iniciales
-INSERT INTO operadores (name, plate, status) VALUES 
-('Roberto Gómez', '52-AK-8F', 'AVAILABLE'),
-('Juan Pérez', '88-UE-1A', 'BUSY')
-ON CONFLICT (plate) DO NOTHING;
+DROP POLICY IF EXISTS "Inserción anónima metadata" ON evidencias_geoselladas;
+CREATE POLICY "Inserción anónima metadata" ON evidencias_geoselladas FOR INSERT TO anon WITH CHECK (true);
+
+-- 4. Políticas para Storage (Bucket: evidencias)
+-- Asegúrate de que el bucket 'evidencias' sea PÚBLICO en la pestaña de Storage.
+
+DROP POLICY IF EXISTS "Permitir subida a operadores" ON storage.objects;
+CREATE POLICY "Permitir subida a operadores" 
+ON storage.objects FOR INSERT 
+TO anon 
+WITH CHECK (bucket_id = 'evidencias');
+
+DROP POLICY IF EXISTS "Permitir lectura pública" ON storage.objects;
+CREATE POLICY "Permitir lectura pública" 
+ON storage.objects FOR SELECT 
+TO public 
+USING (bucket_id = 'evidencias');
+
+DROP POLICY IF EXISTS "Permitir actualización a operadores" ON storage.objects;
+CREATE POLICY "Permitir actualización a operadores" 
+ON storage.objects FOR UPDATE 
+TO anon 
+USING (bucket_id = 'evidencias');
