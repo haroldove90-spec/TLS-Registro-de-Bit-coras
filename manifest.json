@@ -1,0 +1,33 @@
+{
+  "name": "TBS Logistics Services",
+  "short_name": "TBS",
+  "description": "TBS Logistics Services - Registro de Bitácoras",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "https://tritex.com.mx/tlsicono.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "https://tritex.com.mx/tlsicono.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "https://tritex.com.mx/tlssplash.png",
+      "sizes": "1080x1920",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "TBS - Registro de Bitácoras"
+    }
+  ]
+}
