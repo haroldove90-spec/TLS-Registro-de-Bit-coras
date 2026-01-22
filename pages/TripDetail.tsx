@@ -9,7 +9,7 @@ import {
   Navigation, Camera, Loader, Fuel, Clock, RotateCcw, 
   ShieldAlert, RefreshCw, FileWarning, FileText, 
   ChevronRight, X, Image as ImageIcon, Plus, CheckCircle, UploadCloud, ExternalLink, Share2, Map, Building2, Calendar, MessageSquare, Truck,
-  Briefcase, Wrench, Wallet, Trash2, Save, Paperclip, Gauge, Siren, ChevronDown, ChevronUp, Ticket, Construction, Key
+  Briefcase, Wrench, Wallet, Trash2, Save, Paperclip, Gauge, Siren, ChevronDown, ChevronUp, Ticket, Construction, Key, Activity
 } from 'lucide-react';
 
 interface TripDetailProps {
@@ -65,6 +65,9 @@ export const TripDetail: React.FC<TripDetailProps> = ({ trip, onBack, onUpdateTr
   // Estados para Menús Desplegables (Nuevo Diseño)
   const [showGastosMenu, setShowGastosMenu] = useState(false);
   const [showMantenimientoMenu, setShowMantenimientoMenu] = useState(false);
+  
+  // Estado para desplegar Monitor Operativo (Nuevo)
+  const [showOperativeSection, setShowOperativeSection] = useState(false);
 
   // Estados para Odómetro (Nuevo Requisito)
   const [showOdometerModal, setShowOdometerModal] = useState<{show: boolean, type: 'START' | 'END', pendingStageIndex: number} | null>(null);
@@ -319,7 +322,6 @@ export const TripDetail: React.FC<TripDetailProps> = ({ trip, onBack, onUpdateTr
         total = fuelTotal;
     } else {
         // Validación genérica para otros gastos y mantenimientos (incluyendo reportes urgentes)
-        // Nota: El monto puede ser 0 para un reporte de incidencia sin costo inmediato
         validRows = expenseRows.filter(r => r.concept.trim() !== '');
         if (validRows.length === 0) {
             alert("Agrega al menos una descripción.");
@@ -795,171 +797,163 @@ export const TripDetail: React.FC<TripDetailProps> = ({ trip, onBack, onUpdateTr
         
         <div>{renderInfoCards()}</div>
         
-        <div className="flex items-center my-2">
-            <div className="flex-grow h-px bg-slate-300"></div>
-            <span className="mx-4 text-slate-400 font-black uppercase text-sm tracking-widest">Control de Etapas</span>
-            <div className="flex-grow h-px bg-slate-300"></div>
-        </div>
-        
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden animate-in fade-in slide-in-from-top-2">
-            <div className="bg-slate-100 px-5 py-4 border-b border-slate-200 flex justify-between items-center">
-                <h3 className="font-black text-sm text-slate-700 uppercase tracking-widest flex items-center">
-                    <Map className="h-5 w-5 mr-2" /> Navegación Rápida
-                </h3>
-            </div>
-            <div className="divide-y divide-slate-100">
-                {destinations.map((dest, idx) => {
-                    const isCompleted = dest.status === 'COMPLETED';
-                    const isActive = dest.id === activeDest?.id && !isCompleted;
+        {/* BOTÓN PRINCIPAL PARA MOSTRAR MONITOR OPERATIVO */}
+        <button
+            onClick={() => setShowOperativeSection(!showOperativeSection)}
+            className="w-full bg-blue-600 text-white font-black text-xl py-4 rounded-2xl shadow-lg border-b-4 border-blue-800 active:translate-y-1 active:border-b-0 transition-all flex items-center justify-center space-x-3 mb-2"
+        >
+            <Activity className="h-6 w-6" />
+            <span>OPERATIVO</span>
+            {showOperativeSection ? <ChevronUp className="h-6 w-6" /> : <ChevronDown className="h-6 w-6" />}
+        </button>
+
+        {showOperativeSection && (
+            <div className="animate-in fade-in slide-in-from-top-4 space-y-8">
+                <div className="flex items-center my-2">
+                    <div className="flex-grow h-px bg-slate-300"></div>
+                    <span className="mx-4 text-slate-400 font-black uppercase text-sm tracking-widest">Control de Etapas</span>
+                    <div className="flex-grow h-px bg-slate-300"></div>
+                </div>
+                
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                    <div className="bg-slate-100 px-5 py-4 border-b border-slate-200 flex justify-between items-center">
+                        <h3 className="font-black text-sm text-slate-700 uppercase tracking-widest flex items-center">
+                            <Map className="h-5 w-5 mr-2" /> Navegación Rápida
+                        </h3>
+                    </div>
+                    <div className="divide-y divide-slate-100">
+                        {destinations.map((dest, idx) => {
+                            const isCompleted = dest.status === 'COMPLETED';
+                            const isActive = dest.id === activeDest?.id && !isCompleted;
+
+                            return (
+                                <div key={dest.id} className={`p-5 flex items-center justify-between ${isActive ? 'bg-blue-50/50' : 'bg-white'}`}>
+                                    <div className="flex items-center space-x-4 overflow-hidden">
+                                        <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center font-black text-lg border-4 ${isCompleted ? 'bg-slate-200 text-slate-400 border-slate-300' : isActive ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-400 border-slate-200'}`}>
+                                            {isCompleted ? <Check className="h-6 w-6" /> : idx + 1}
+                                        </div>
+                                        <div className="min-w-0">
+                                            <p className={`text-lg font-black truncate ${isCompleted ? 'text-slate-400 line-through' : 'text-slate-900'}`}>{dest.name}</p>
+                                            <p className="text-xs text-slate-500 font-bold uppercase tracking-wide">{isActive ? '🟢 Destino Actual' : isCompleted ? '⚪ Completado' : '🟠 Pendiente'}</p>
+                                        </div>
+                                    </div>
+                                    {!isCompleted && (
+                                        <button 
+                                            onClick={() => { 
+                                                playSound('notification'); 
+                                                const url = dest.mapsLink || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(dest.name)}`; 
+                                                window.open(url, '_blank'); 
+                                            }} 
+                                            className={`flex-shrink-0 p-3 rounded-xl border-2 transition-all active:scale-95 ${isActive ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-white text-slate-500 border-slate-300 hover:border-blue-400 hover:text-blue-600'}`}
+                                        >
+                                            <Navigation className="h-6 w-6" />
+                                        </button>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+
+                {trip.indicaciones_pdf_url && (
+                    <button onClick={() => setShowPdfModal(true)} className="w-full bg-white border-2 border-blue-100 p-5 rounded-2xl shadow-sm flex items-center justify-between active:scale-[0.98] transition-all group hover:border-blue-400">
+                        <div className="flex items-center">
+                            <div className="bg-blue-100 p-4 rounded-xl mr-5 group-hover:bg-blue-600 transition-colors"><FileText className="h-8 w-8 text-blue-700 group-hover:text-white transition-colors" /></div>
+                            <div className="text-left"><h4 className="text-lg font-black text-slate-800 uppercase tracking-tight">Documento de Viaje</h4><p className="text-sm text-slate-500 font-medium">Ver indicaciones (PDF)</p></div>
+                        </div>
+                        <div className="bg-slate-50 p-3 rounded-full"><ChevronRight className="h-6 w-6 text-slate-400" /></div>
+                    </button>
+                )}
+
+                {/* Lista de Etapas */}
+                <div className="space-y-4">
+                {TRIP_STAGES.map((stage, index) => {
+                    const isCompleted = index < trip.currentStageIndex;
+                    const isCurrent = index === trip.currentStageIndex;
+                    const isStepUnloaded = index === 5; 
+                    
+                    const currentEvidence = trip.evidence.filter(e => 
+                        e.stageIndex === 5 && (!e.destinationId || e.destinationId === activeDest?.id)
+                    );
 
                     return (
-                        <div key={dest.id} className={`p-5 flex items-center justify-between ${isActive ? 'bg-blue-50/50' : 'bg-white'}`}>
-                             <div className="flex items-center space-x-4 overflow-hidden">
-                                <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center font-black text-lg border-4 ${isCompleted ? 'bg-slate-200 text-slate-400 border-slate-300' : isActive ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-400 border-slate-200'}`}>
-                                    {isCompleted ? <Check className="h-6 w-6" /> : idx + 1}
-                                </div>
-                                <div className="min-w-0">
-                                    <p className={`text-lg font-black truncate ${isCompleted ? 'text-slate-400 line-through' : 'text-slate-900'}`}>{dest.name}</p>
-                                    <p className="text-xs text-slate-500 font-bold uppercase tracking-wide">{isActive ? '🟢 Destino Actual' : isCompleted ? '⚪ Completado' : '🟠 Pendiente'}</p>
-                                </div>
+                    <div key={stage.key} className="space-y-3">
+                        <button
+                        onClick={() => handleStageClick(index)}
+                        disabled={!isCurrent || isProcessing}
+                        className={`w-full py-8 px-6 rounded-3xl flex items-center justify-between border-b-[6px] transition-all active:translate-y-1
+                            ${isCompleted ? 'bg-slate-200 border-slate-300 text-slate-400' : 
+                            isCurrent ? 'bg-amber-400 border-amber-600 text-black shadow-xl ring-4 ring-white' : 
+                            'bg-white border-gray-100 text-gray-300 opacity-60'}`}
+                        >
+                        <div className="flex items-center space-x-6">
+                            <div className={`w-14 h-14 rounded-full flex items-center justify-center border-4 font-black text-3xl shadow-inner shrink-0
+                            ${isCurrent ? 'bg-black text-white border-black' : isCompleted ? 'bg-slate-300 text-slate-500 border-slate-400' : 'border-current'}`}>
+                            {isCompleted ? <Check className="h-8 w-8" /> : <span>{index + 1}</span>}
                             </div>
-                            {!isCompleted && (
-                                <button 
-                                    onClick={() => { 
-                                        playSound('notification'); 
-                                        const url = dest.mapsLink || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(dest.name)}`; 
-                                        window.open(url, '_blank'); 
-                                    }} 
-                                    className={`flex-shrink-0 p-3 rounded-xl border-2 transition-all active:scale-95 ${isActive ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-white text-slate-500 border-slate-300 hover:border-blue-400 hover:text-blue-600'}`}
-                                >
-                                    <Navigation className="h-6 w-6" />
-                                </button>
+                            <div className="text-left">
+                            <span className="text-2xl font-black uppercase tracking-tight block leading-none">{stage.label}</span>
+                            {isCurrent && (
+                                <span className="text-sm font-black uppercase opacity-70 flex items-center mt-2 bg-black/10 px-2 py-1 rounded w-fit">
+                                {isProcessing ? <Loader className="h-4 w-4 animate-spin mr-2" /> : <ChevronRight className="h-4 w-4 mr-2" />}
+                                {isStepUnloaded && currentEvidence.length === 0 ? "FOTO REQUERIDA" : "PULSAR PARA CONFIRMAR"}
+                                </span>
+                            )}
+                            </div>
+                        </div>
+                        </button>
+
+                        {index === 0 && (
+                        <div className="mt-2 animate-in fade-in slide-in-from-top-2">
+                            <button onClick={() => { playSound('notification'); const url = trip.originMapsLink || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(trip.origin)}`; window.open(url, '_blank'); }} className="w-full bg-white border-2 border-slate-200 text-slate-800 p-4 rounded-2xl flex items-center justify-center space-x-3 active:scale-95 transition-all shadow-sm hover:border-slate-300">
+                            <MapPin className="h-6 w-6 text-red-600" />
+                            <div className="text-left leading-tight"><span className="block text-xs font-bold uppercase text-slate-400">Lugar de Carga</span><span className="block text-base font-black uppercase">Ver Mapa</span></div>
+                            </button>
+                        </div>
+                        )}
+
+                        {isCurrent && isStepUnloaded && (
+                        <div className="bg-slate-800 rounded-3xl p-6 border-4 border-slate-600 shadow-2xl animate-in slide-in-from-top-4 duration-300">
+                            <div className="flex flex-col items-center mb-6 text-center">
+                                <div className="bg-amber-400 p-4 rounded-full mb-4 shadow-lg animate-bounce"><Camera className="h-10 w-10 text-black" /></div>
+                                <h4 className="text-2xl font-black text-white uppercase tracking-tight">Evidencia: {activeDest?.name || 'Destino'}</h4>
+                                <p className="text-sm font-medium text-slate-300 mt-2 max-w-[250px]">Toma fotos de la mercancía descargada.</p>
+                            </div>
+                            <button 
+                                onClick={() => fileInputRef.current?.click()} 
+                                disabled={isUploading}
+                                className={`w-full text-white py-5 rounded-2xl font-black text-lg uppercase flex items-center justify-center border-b-4 active:translate-y-1 active:border-b-0 transition-all mb-6 shadow-lg group ${isUploading ? 'bg-slate-500 border-slate-700 cursor-wait' : 'bg-blue-600 hover:bg-blue-500 border-blue-800'}`}
+                            >
+                                {isUploading ? (
+                                    <>
+                                        <Loader className="h-6 w-6 mr-3 animate-spin" />
+                                        SUBIENDO...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Plus className="h-6 w-6 mr-3 group-hover:rotate-90 transition-transform" />
+                                        SUBIR FOTO
+                                    </>
+                                )}
+                            </button>
+                            {currentEvidence.length === 0 ? (
+                            <div className="py-8 text-center border-2 border-dashed border-slate-600 rounded-2xl bg-slate-700/50"><ImageIcon className="h-10 w-10 text-slate-500 mx-auto mb-3" /><p className="text-sm font-bold text-slate-400 uppercase tracking-widest">Sin evidencias</p></div>
+                            ) : (
+                            <div className="grid grid-cols-2 gap-4">
+                                {currentEvidence.map((ev) => (
+                                    <div key={ev.id} className="relative group"><SafeImage src={ev.url} alt="Evidencia" className="aspect-square rounded-xl border-4 border-slate-600 shadow-lg" /><div className="absolute bottom-2 right-2 bg-black/80 text-white text-xs font-bold px-2 py-1 rounded-lg shadow-sm">{new Date(ev.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div><div className="absolute -top-2 -right-2 bg-green-500 rounded-full p-1 border-2 border-white"><Check className="h-4 w-4 text-white" /></div></div>
+                                ))}
+                            </div>
                             )}
                         </div>
+                        )}
+                    </div>
                     );
                 })}
-            </div>
-        </div>
-
-        {trip.indicaciones_pdf_url && (
-            <button onClick={() => setShowPdfModal(true)} className="w-full bg-white border-2 border-blue-100 p-5 rounded-2xl shadow-sm flex items-center justify-between active:scale-[0.98] transition-all group hover:border-blue-400">
-                <div className="flex items-center">
-                    <div className="bg-blue-100 p-4 rounded-xl mr-5 group-hover:bg-blue-600 transition-colors"><FileText className="h-8 w-8 text-blue-700 group-hover:text-white transition-colors" /></div>
-                    <div className="text-left"><h4 className="text-lg font-black text-slate-800 uppercase tracking-tight">Documento de Viaje</h4><p className="text-sm text-slate-500 font-medium">Ver indicaciones (PDF)</p></div>
                 </div>
-                <div className="bg-slate-50 p-3 rounded-full"><ChevronRight className="h-6 w-6 text-slate-400" /></div>
-            </button>
+            </div>
         )}
 
-        {/* Lista de Etapas */}
-        <div className="space-y-4">
-          {TRIP_STAGES.map((stage, index) => {
-            const isCompleted = index < trip.currentStageIndex;
-            const isCurrent = index === trip.currentStageIndex;
-            const isStepUnloaded = index === 5; 
-            
-            const currentEvidence = trip.evidence.filter(e => 
-                e.stageIndex === 5 && (!e.destinationId || e.destinationId === activeDest?.id)
-            );
-
-            return (
-              <div key={stage.key} className="space-y-3">
-                <button
-                  onClick={() => handleStageClick(index)}
-                  disabled={!isCurrent || isProcessing}
-                  className={`w-full py-8 px-6 rounded-3xl flex items-center justify-between border-b-[6px] transition-all active:translate-y-1
-                    ${isCompleted ? 'bg-slate-200 border-slate-300 text-slate-400' : 
-                      isCurrent ? 'bg-amber-400 border-amber-600 text-black shadow-xl ring-4 ring-white' : 
-                      'bg-white border-gray-100 text-gray-300 opacity-60'}`}
-                >
-                  <div className="flex items-center space-x-6">
-                    <div className={`w-14 h-14 rounded-full flex items-center justify-center border-4 font-black text-3xl shadow-inner shrink-0
-                      ${isCurrent ? 'bg-black text-white border-black' : isCompleted ? 'bg-slate-300 text-slate-500 border-slate-400' : 'border-current'}`}>
-                      {isCompleted ? <Check className="h-8 w-8" /> : <span>{index + 1}</span>}
-                    </div>
-                    <div className="text-left">
-                      <span className="text-2xl font-black uppercase tracking-tight block leading-none">{stage.label}</span>
-                      {isCurrent && (
-                        <span className="text-sm font-black uppercase opacity-70 flex items-center mt-2 bg-black/10 px-2 py-1 rounded w-fit">
-                          {isProcessing ? <Loader className="h-4 w-4 animate-spin mr-2" /> : <ChevronRight className="h-4 w-4 mr-2" />}
-                          {isStepUnloaded && currentEvidence.length === 0 ? "FOTO REQUERIDA" : "PULSAR PARA CONFIRMAR"}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </button>
-
-                {index === 0 && (
-                   <div className="mt-2 animate-in fade-in slide-in-from-top-2">
-                     <button onClick={() => { playSound('notification'); const url = trip.originMapsLink || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(trip.origin)}`; window.open(url, '_blank'); }} className="w-full bg-white border-2 border-slate-200 text-slate-800 p-4 rounded-2xl flex items-center justify-center space-x-3 active:scale-95 transition-all shadow-sm hover:border-slate-300">
-                       <MapPin className="h-6 w-6 text-red-600" />
-                       <div className="text-left leading-tight"><span className="block text-xs font-bold uppercase text-slate-400">Lugar de Carga</span><span className="block text-base font-black uppercase">Ver Mapa</span></div>
-                     </button>
-                   </div>
-                )}
-
-                {isCurrent && isStepUnloaded && (
-                  <div className="bg-slate-800 rounded-3xl p-6 border-4 border-slate-600 shadow-2xl animate-in slide-in-from-top-4 duration-300">
-                    <div className="flex flex-col items-center mb-6 text-center">
-                        <div className="bg-amber-400 p-4 rounded-full mb-4 shadow-lg animate-bounce"><Camera className="h-10 w-10 text-black" /></div>
-                        <h4 className="text-2xl font-black text-white uppercase tracking-tight">Evidencia: {activeDest?.name || 'Destino'}</h4>
-                        <p className="text-sm font-medium text-slate-300 mt-2 max-w-[250px]">Toma fotos de la mercancía descargada.</p>
-                    </div>
-                    <button 
-                        onClick={() => fileInputRef.current?.click()} 
-                        disabled={isUploading}
-                        className={`w-full text-white py-5 rounded-2xl font-black text-lg uppercase flex items-center justify-center border-b-4 active:translate-y-1 active:border-b-0 transition-all mb-6 shadow-lg group ${isUploading ? 'bg-slate-500 border-slate-700 cursor-wait' : 'bg-blue-600 hover:bg-blue-500 border-blue-800'}`}
-                    >
-                        {isUploading ? (
-                            <>
-                                <Loader className="h-6 w-6 mr-3 animate-spin" />
-                                SUBIENDO...
-                            </>
-                        ) : (
-                            <>
-                                <Plus className="h-6 w-6 mr-3 group-hover:rotate-90 transition-transform" />
-                                SUBIR FOTO
-                            </>
-                        )}
-                    </button>
-                    {currentEvidence.length === 0 ? (
-                      <div className="py-8 text-center border-2 border-dashed border-slate-600 rounded-2xl bg-slate-700/50"><ImageIcon className="h-10 w-10 text-slate-500 mx-auto mb-3" /><p className="text-sm font-bold text-slate-400 uppercase tracking-widest">Sin evidencias</p></div>
-                    ) : (
-                      <div className="grid grid-cols-2 gap-4">
-                        {currentEvidence.map((ev) => (
-                            <div key={ev.id} className="relative group"><SafeImage src={ev.url} alt="Evidencia" className="aspect-square rounded-xl border-4 border-slate-600 shadow-lg" /><div className="absolute bottom-2 right-2 bg-black/80 text-white text-xs font-bold px-2 py-1 rounded-lg shadow-sm">{new Date(ev.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div><div className="absolute -top-2 -right-2 bg-green-500 rounded-full p-1 border-2 border-white"><Check className="h-4 w-4 text-white" /></div></div>
-                          ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-
-        {/* BOTÓN DE PÁNICO (ASISTENCIA URGENTE) */}
-        <div className="mt-6 mb-8 px-2 animate-in fade-in slide-in-from-bottom-2">
-            <button 
-                onClick={handlePanicButton}
-                disabled={isPanicLoading}
-                className={`w-full py-5 rounded-3xl font-black text-xl text-white shadow-2xl flex items-center justify-center space-x-3 active:scale-95 transition-all border-b-8
-                    ${isPanicLoading ? 'bg-red-800 border-red-900 cursor-wait' : 'bg-red-600 border-red-800 hover:bg-red-500'}`}
-            >
-                {isPanicLoading ? (
-                    <Loader className="h-8 w-8 animate-spin" />
-                ) : (
-                    <>
-                        <Siren className="h-8 w-8 animate-pulse" />
-                        <span>ASISTENCIA URGENTE</span>
-                    </>
-                )}
-            </button>
-            <p className="text-center text-[10px] text-red-400 font-bold mt-2 uppercase tracking-wider">
-                Solo usar en caso de emergencia real
-            </p>
-        </div>
-        
         {/* SECCIÓN DE BOTONES DE GASTOS Y MANTENIMIENTO (NUEVO DISEÑO) */}
         <div className="mt-8 px-2 space-y-4 pb-10">
             <h4 className="text-center text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Panel de Control Operativo</h4>
@@ -1038,6 +1032,28 @@ export const TripDetail: React.FC<TripDetailProps> = ({ trip, onBack, onUpdateTr
                     </div>
                 )}
             </div>
+        </div>
+
+        {/* BOTÓN DE PÁNICO (ASISTENCIA URGENTE) - MOVIDO AQUÍ */}
+        <div className="mt-6 mb-8 px-2 animate-in fade-in slide-in-from-bottom-2">
+            <button 
+                onClick={handlePanicButton}
+                disabled={isPanicLoading}
+                className={`w-full py-5 rounded-3xl font-black text-xl text-white shadow-2xl flex items-center justify-center space-x-3 active:scale-95 transition-all border-b-8
+                    ${isPanicLoading ? 'bg-red-800 border-red-900 cursor-wait' : 'bg-red-600 border-red-800 hover:bg-red-500'}`}
+            >
+                {isPanicLoading ? (
+                    <Loader className="h-8 w-8 animate-spin" />
+                ) : (
+                    <>
+                        <Siren className="h-8 w-8 animate-pulse" />
+                        <span>ASISTENCIA URGENTE</span>
+                    </>
+                )}
+            </button>
+            <p className="text-center text-[10px] text-red-400 font-bold mt-2 uppercase tracking-wider">
+                Solo usar en caso de emergencia real
+            </p>
         </div>
       </div>
 
