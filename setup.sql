@@ -1,48 +1,82 @@
--- ==========================================================
--- TLS LOGISTICS - CONFIGURACIÓN DE BASE DE DATOS Y STORAGE
--- Instrucciones: Copia y pega TODO este código en el SQL Editor de Supabase
--- ==========================================================
 
--- 1. Crear la tabla de evidencias si no existe
-CREATE TABLE IF NOT EXISTS evidencias_geoselladas (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    trip_id TEXT NOT NULL,
-    stage_index INTEGER NOT NULL,
-    url TEXT NOT NULL,
-    lat DECIMAL,
-    lng DECIMAL,
-    timestamp BIGINT,
+-- =================================================================
+-- SCRIPT DE ACTUALIZACIÓN: SOPORTE PARA HISTORIAL Y ORDENES
+-- =================================================================
+
+-- 1. Asegurar que la tabla 'viajes' tenga los campos necesarios
+CREATE TABLE IF NOT EXISTS viajes (
+    id TEXT PRIMARY KEY,
+    code TEXT NOT NULL,
+    origin TEXT,
+    destination TEXT,
+    client TEXT,
+    project TEXT,
+    appointment TEXT,
+    status TEXT,
+    plate TEXT,
+    current_stage INTEGER DEFAULT 0,
+    evidence_status TEXT DEFAULT 'NONE',
+    destinos_lista JSONB DEFAULT '[]'::jsonb, 
+    evidence JSONB DEFAULT '[]'::jsonb,
+    locationHistory JSONB DEFAULT '[]'::jsonb,
+    extra_costs JSONB DEFAULT '[]'::jsonb,
+    instructions TEXT,
+    originMapsLink TEXT,
+    destinationMapsLink TEXT,
+    indicaciones_pdf_url TEXT,
+    rejectionReason TEXT,
+    odometer_start NUMERIC,
+    odometer_end NUMERIC,
+    scheduled_date DATE, 
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 2. Habilitar Seguridad (RLS)
-ALTER TABLE evidencias_geoselladas ENABLE ROW LEVEL SECURITY;
+-- 2. Crear índices
+CREATE INDEX IF NOT EXISTS idx_viajes_plate ON viajes(plate);
+CREATE INDEX IF NOT EXISTS idx_viajes_status ON viajes(status);
+CREATE INDEX IF NOT EXISTS idx_viajes_date ON viajes(scheduled_date);
 
--- 3. Políticas para la Tabla (Rol: anon)
--- Nota: La app usa login simulado, por lo que las peticiones llegan como 'anon'
-DROP POLICY IF EXISTS "Lectura pública metadata" ON evidencias_geoselladas;
-CREATE POLICY "Lectura pública metadata" ON evidencias_geoselladas FOR SELECT TO public USING (true);
+-- 3. Tabla de Notificaciones
+CREATE TABLE IF NOT EXISTS notificaciones (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    target_role TEXT NOT NULL,
+    target_user_id TEXT,
+    title TEXT NOT NULL,
+    message TEXT NOT NULL,
+    type TEXT CHECK (type IN ('success', 'alert', 'info')),
+    is_read BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    metadata JSONB DEFAULT '{}'::jsonb
+);
 
-DROP POLICY IF EXISTS "Inserción anónima metadata" ON evidencias_geoselladas;
-CREATE POLICY "Inserción anónima metadata" ON evidencias_geoselladas FOR INSERT TO anon WITH CHECK (true);
+-- 4. Actualización de esquema para tablas existentes (IMPORTANTE PARA ODOMETROS)
+DO $$
+BEGIN
+    BEGIN
+        ALTER TABLE viajes ADD COLUMN odometer_start NUMERIC;
+    EXCEPTION
+        WHEN duplicate_column THEN NULL;
+    END;
+    
+    BEGIN
+        ALTER TABLE viajes ADD COLUMN odometer_end NUMERIC;
+    EXCEPTION
+        WHEN duplicate_column THEN NULL;
+    END;
+END $$;
 
--- 4. Políticas para Storage (Bucket: evidencias)
--- Asegúrate de que el bucket 'evidencias' sea PÚBLICO en la pestaña de Storage.
+-- 5. Realtime
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'viajes') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE viajes;
+  END IF;
+  
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'notificaciones') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE notificaciones;
+  END IF;
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
 
-DROP POLICY IF EXISTS "Permitir subida a operadores" ON storage.objects;
-CREATE POLICY "Permitir subida a operadores" 
-ON storage.objects FOR INSERT 
-TO anon 
-WITH CHECK (bucket_id = 'evidencias');
-
-DROP POLICY IF EXISTS "Permitir lectura pública" ON storage.objects;
-CREATE POLICY "Permitir lectura pública" 
-ON storage.objects FOR SELECT 
-TO public 
-USING (bucket_id = 'evidencias');
-
-DROP POLICY IF EXISTS "Permitir actualización a operadores" ON storage.objects;
-CREATE POLICY "Permitir actualización a operadores" 
-ON storage.objects FOR UPDATE 
-TO anon 
-USING (bucket_id = 'evidencias');
+NOTIFY pgrst, 'reload schema';

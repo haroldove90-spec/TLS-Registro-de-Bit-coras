@@ -9,7 +9,7 @@ import {
   Navigation, Camera, Loader, Fuel, Clock, RotateCcw, 
   ShieldAlert, RefreshCw, FileWarning, FileText, 
   ChevronRight, X, Image as ImageIcon, Plus, CheckCircle, UploadCloud, ExternalLink, Share2, Map, Building2, Calendar, MessageSquare, Truck,
-  Briefcase, Wrench, Wallet, Trash2, Save, Paperclip, Gauge, Siren, ChevronDown, ChevronUp, Ticket, Construction, Key
+  Briefcase, Wrench, Wallet, Trash2, Save, Paperclip
 } from 'lucide-react';
 
 interface TripDetailProps {
@@ -52,29 +52,12 @@ export const TripDetail: React.FC<TripDetailProps> = ({ trip, onBack, onUpdateTr
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [currentExpenseCategory, setCurrentExpenseCategory] = useState<ExpenseCategory | null>(null);
   const [expenseRows, setExpenseRows] = useState<ExpenseItem[]>([{ concept: '', amount: 0 }]);
-  const [expenseEvidence, setExpenseEvidence] = useState<Evidence[]>([]); 
+  const [expenseEvidence, setExpenseEvidence] = useState<Evidence[]>([]); // Estado temporal para fotos de gastos
   const [isSavingExpense, setIsSavingExpense] = useState(false);
   const [isUploadingExpenseEvidence, setIsUploadingExpenseEvidence] = useState(false);
 
-  // Estados Específicos para Combustible
-  const [fuelOdometer, setFuelOdometer] = useState<string>('');
-  const [fuelLiters, setFuelLiters] = useState<string>('');
-  const [fuelPrice, setFuelPrice] = useState<string>('');
-  const [fuelTotal, setFuelTotal] = useState<number>(0);
-
-  // Estados para Menús Desplegables (Nuevo Diseño)
-  const [showGastosMenu, setShowGastosMenu] = useState(false);
-  const [showMantenimientoMenu, setShowMantenimientoMenu] = useState(false);
-
-  // Estados para Odómetro (Nuevo Requisito)
-  const [showOdometerModal, setShowOdometerModal] = useState<{show: boolean, type: 'START' | 'END', pendingStageIndex: number} | null>(null);
-  const [odometerValue, setOdometerValue] = useState<string>('');
-
-  // Estado para Botón de Pánico
-  const [isPanicLoading, setIsPanicLoading] = useState(false);
-
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const expenseFileInputRef = useRef<HTMLInputElement>(null); 
+  const expenseFileInputRef = useRef<HTMLInputElement>(null); // Ref separada para gastos
   
   const destinations = trip.destinations && trip.destinations.length > 0 
     ? trip.destinations 
@@ -91,132 +74,11 @@ export const TripDetail: React.FC<TripDetailProps> = ({ trip, onBack, onUpdateTr
 
   useEffect(() => { verifyConnection(); }, []);
 
-  // Calcular total de combustible automáticamente
-  useEffect(() => {
-    const liters = parseFloat(fuelLiters);
-    const price = parseFloat(fuelPrice);
-    if (!isNaN(liters) && !isNaN(price)) {
-        setFuelTotal(liters * price);
-    } else {
-        setFuelTotal(0);
-    }
-  }, [fuelLiters, fuelPrice]);
-
-  // --- LÓGICA DE PÁNICO REFORZADA ---
-  const handlePanicButton = async () => {
-    if (!window.confirm("⚠️ ¿ESTÁS SEGURO?\n\nEsta acción enviará una alerta CRÍTICA a la central con tu ubicación actual precisa.")) {
-        return;
-    }
-
-    setIsPanicLoading(true);
-    // Reproducir sonido inmediatamente para feedback local
-    playSound('alert');
-
-    try {
-        // Intentar obtener ubicación con alta precisión
-        const location = await getCurrentLocation();
-        
-        const timestamp = new Date().toLocaleString();
-        const accuracyText = location?.accuracy ? `(Precisión: +/- ${Math.round(location.accuracy)}m)` : '(GPS Impreciso)';
-        const locationText = location ? `${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}` : 'UBICACIÓN NO DISPONIBLE';
-
-        // Registrar alerta en Supabase con metadata enriquecida
-        const { error } = await supabase.from('notificaciones').insert({
-            target_role: 'ADMIN',
-            title: '🆘 PÁNICO - ASISTENCIA URGENTE',
-            message: `La unidad ${trip.plate} solicitó auxilio a las ${timestamp}. Ubicación: ${locationText} ${accuracyText}.`,
-            type: 'alert',
-            metadata: { 
-                trip_id: trip.id,
-                lat: location?.lat,
-                lng: location?.lng,
-                accuracy: location?.accuracy,
-                timestamp: Date.now(),
-                extra_info: 'PANIC BUTTON PRESSED'
-            }
-        });
-
-        if (error) throw error;
-
-        // Actualizar estado del viaje a INCIDENT para que sea visible en rojo en el dashboard
-        const updatedTrip = { ...trip, status: TripStatus.INCIDENT, hasIncident: true };
-        await supabase.from('viajes').update({ status: TripStatus.INCIDENT }).eq('id', trip.id);
-        onUpdateTrip(updatedTrip);
-
-        alert("🚨 ALERTA ENVIADA. LA CENTRAL HA RECIBIDO TU UBICACIÓN Y SOLICITUD DE AYUDA.");
-
-    } catch (err) {
-        console.error("Error enviando alerta de pánico:", err);
-        alert("Error de conexión al enviar alerta. POR FAVOR LLAMA POR TELÉFONO INMEDIATAMENTE.");
-    } finally {
-        setIsPanicLoading(false);
-    }
-  };
-  // -----------------------
-
-  // --- LÓGICA DE ODÓMETRO ---
-  const handleSaveOdometer = async () => {
-    if (!showOdometerModal || !odometerValue) return;
-
-    const value = parseFloat(odometerValue);
-    if (isNaN(value) || value <= 0) {
-        alert("Por favor ingrese un kilometraje válido.");
-        return;
-    }
-
-    // Validar coherencia (Final > Inicial)
-    if (showOdometerModal.type === 'END' && trip.odometerStart && value <= trip.odometerStart) {
-        alert(`El odómetro final (${value}) debe ser mayor al inicial (${trip.odometerStart}).`);
-        return;
-    }
-
-    setIsProcessing(true);
-    try {
-        const updateField = showOdometerModal.type === 'START' ? 'odometer_start' : 'odometer_end';
-        const tripField = showOdometerModal.type === 'START' ? 'odometerStart' : 'odometerEnd';
-        
-        // 1. Guardar en DB
-        const { error } = await supabase
-            .from('viajes')
-            .update({ [updateField]: value })
-            .eq('id', trip.id);
-
-        if (error) throw error;
-
-        // 2. Actualizar estado local
-        const updatedTrip = { ...trip, [tripField]: value };
-        onUpdateTrip(updatedTrip); // Actualizamos el trip global
-
-        // 3. Cerrar modal y proceder con la etapa pendiente
-        const pendingIndex = showOdometerModal.pendingStageIndex;
-        setShowOdometerModal(null);
-        setOdometerValue('');
-        
-        // 4. Ejecutar el cambio de etapa que estaba pendiente
-        await executeStageChange(pendingIndex, updatedTrip); // Pasamos el trip actualizado
-
-    } catch (err) {
-        console.error("Error guardando odómetro:", err);
-        alert("Error al guardar el kilometraje.");
-    } finally {
-        setIsProcessing(false);
-    }
-  };
-
-  // ------------------------
-
   // --- LÓGICA DE GASTOS ---
-  const handleOpenExpenseModal = (category: ExpenseCategory, initialConcept: string = '') => {
+  const handleOpenExpenseModal = (category: ExpenseCategory) => {
     setCurrentExpenseCategory(category);
-    setExpenseRows([{ concept: initialConcept, amount: 0 }]); 
-    setExpenseEvidence([]); 
-    
-    // Resetear campos de combustible
-    setFuelOdometer('');
-    setFuelLiters('');
-    setFuelPrice('');
-    setFuelTotal(0);
-
+    setExpenseRows([{ concept: '', amount: 0 }]); // Reset rows
+    setExpenseEvidence([]); // Reset evidence
     setShowExpenseModal(true);
     playSound('notification');
   };
@@ -251,6 +113,7 @@ export const TripDetail: React.FC<TripDetailProps> = ({ trip, onBack, onUpdateTr
             const file = files[i];
             const watermarkedUrl = await processWatermark(file, trip.code, trip.plate);
             
+            // Guardar en carpeta 'expenses' para diferenciar de las evidencias operativas normales
             const fileName = `${trip.id}_EXPENSE_${Date.now()}_${i}.jpg`;
             const filePath = `${trip.id}/expenses/${fileName}`;
 
@@ -268,7 +131,7 @@ export const TripDetail: React.FC<TripDetailProps> = ({ trip, onBack, onUpdateTr
             newEvidences.push({
                 id: Math.random().toString(36).substr(2, 9),
                 tripId: trip.id,
-                stageIndex: -1, 
+                stageIndex: -1, // -1 indica que es un gasto, no una etapa de ruta
                 url: urlData.publicUrl,
                 fileName: fileName,
                 path: filePath,
@@ -297,46 +160,24 @@ export const TripDetail: React.FC<TripDetailProps> = ({ trip, onBack, onUpdateTr
   const handleSaveExpense = async () => {
     if (!currentExpenseCategory) return;
     
-    // Determinar tipo de registro para lógica específica
-    const isFuel = currentExpenseCategory === 'GASTOS' && expenseRows[0]?.concept?.includes('Combustible');
-    const isUrgentMaintenance = currentExpenseCategory === 'MANTENIMIENTO' && expenseRows[0]?.concept?.includes('Reporte urgente');
-    
-    let validRows: ExpenseItem[] = [];
-    let total = 0;
-
-    if (isFuel) {
-        if (!fuelOdometer || !fuelLiters || !fuelPrice || fuelTotal <= 0) {
-            alert("Por favor completa todos los campos de combustible correctamente.");
-            return;
-        }
-        validRows = [{
-            concept: 'Combustible',
-            amount: fuelTotal,
-            odometer: parseFloat(fuelOdometer),
-            liters: parseFloat(fuelLiters),
-            pricePerLiter: parseFloat(fuelPrice)
-        }];
-        total = fuelTotal;
-    } else {
-        // Validación genérica para otros gastos y mantenimientos (incluyendo reportes urgentes)
-        // Nota: El monto puede ser 0 para un reporte de incidencia sin costo inmediato
-        validRows = expenseRows.filter(r => r.concept.trim() !== '');
-        if (validRows.length === 0) {
-            alert("Agrega al menos una descripción.");
-            return;
-        }
-        total = validRows.reduce((sum, r) => sum + Number(r.amount || 0), 0);
+    // Validar
+    const validRows = expenseRows.filter(r => r.concept.trim() !== '' && Number(r.amount) > 0);
+    if (validRows.length === 0) {
+        alert("Agrega al menos un concepto con monto válido.");
+        return;
     }
 
     setIsSavingExpense(true);
     try {
+        const total = validRows.reduce((sum, r) => sum + Number(r.amount), 0);
+        
         const newRecord: ExpenseRecord = {
             id: Math.random().toString(36).substr(2, 9),
             category: currentExpenseCategory,
             items: validRows,
             total: total,
             timestamp: Date.now(),
-            evidence: expenseEvidence 
+            evidence: expenseEvidence // Guardar las evidencias asociadas
         };
 
         const updatedCosts = [...(trip.extraCosts || []), newRecord];
@@ -348,36 +189,19 @@ export const TripDetail: React.FC<TripDetailProps> = ({ trip, onBack, onUpdateTr
 
         if (error) throw error;
 
+        // NOTIFICACIÓN AL ADMIN CON EVIDENCIA SI LA HAY
         const expenseImageUrl = expenseEvidence.length > 0 ? expenseEvidence[0].url : undefined;
         
-        // CONFIGURACIÓN DE NOTIFICACIÓN
-        let notifTitle = '💰 GASTO REGISTRADO';
-        let notifType: 'info' | 'alert' | 'success' = 'info';
-        let notifMessage = `Unidad ${trip.plate} registró: ${currentExpenseCategory} ($${total.toFixed(2)}).`;
-
-        if (isFuel) {
-            notifTitle = '⛽ COMBUSTIBLE REGISTRADO';
-            notifMessage = `Unidad ${trip.plate} cargó combustible ($${total.toFixed(2)}). Odo: ${fuelOdometer}`;
-        } else if (isUrgentMaintenance) {
-            notifTitle = '🚨 REPORTE URGENTE - MANTENIMIENTO';
-            notifType = 'alert'; // ESTO DISPARA LA ALARMA EN ADMIN
-            notifMessage = `⚠️ LA UNIDAD ${trip.plate} REPORTA FALLA URGENTE: ${validRows[0].concept}`;
-        } else if (currentExpenseCategory === 'MANTENIMIENTO') {
-            notifTitle = '🔧 REPORTE MANTENIMIENTO';
-            notifMessage = `Unidad ${trip.plate} reporta incidencia: ${validRows[0].concept}`;
-        }
-
         await supabase.from('notificaciones').insert({
             target_role: 'ADMIN',
-            title: notifTitle,
-            message: notifMessage,
-            type: notifType,
+            title: '💰 GASTO REGISTRADO',
+            message: `Unidad ${trip.plate} registró: ${currentExpenseCategory} ($${total}).`,
+            type: 'info',
             metadata: { 
                 trip_id: trip.id, 
                 image_url: expenseImageUrl,
                 amount: total,
-                category: currentExpenseCategory,
-                urgent: isUrgentMaintenance
+                category: currentExpenseCategory
             }
         });
 
@@ -385,10 +209,6 @@ export const TripDetail: React.FC<TripDetailProps> = ({ trip, onBack, onUpdateTr
         playSound('success');
         setShowExpenseModal(false);
         
-        if (isUrgentMaintenance) {
-            alert("Reporte Urgente Enviado a Torre de Control.");
-        }
-
     } catch (error) {
         console.error("Error saving expense", error);
         alert("Error al guardar registro.");
@@ -410,6 +230,7 @@ export const TripDetail: React.FC<TripDetailProps> = ({ trip, onBack, onUpdateTr
         .update({ status: TripStatus.ACCEPTED })
         .eq('id', trip.id);
     
+    // NOTIFICACIÓN AL ADMIN
     await supabase.from('notificaciones').insert({
         target_role: 'ADMIN',
         title: '✅ VIAJE ACEPTADO',
@@ -451,6 +272,7 @@ export const TripDetail: React.FC<TripDetailProps> = ({ trip, onBack, onUpdateTr
         const updatedHistory = [...(trip.locationHistory || []), newReport];
         const { error } = await supabase.from('viajes').update({ locationHistory: updatedHistory }).eq('id', trip.id);
         
+        // NOTIFICACIÓN AL ADMIN (Solicitud del usuario)
         const { error: notifError } = await supabase.from('notificaciones').insert({
             target_role: 'ADMIN',
             title: '📍 UBICACIÓN COMPARTIDA',
@@ -480,33 +302,13 @@ export const TripDetail: React.FC<TripDetailProps> = ({ trip, onBack, onUpdateTr
     }
   };
 
-  // Función principal para avanzar etapa
-  const handleStageClick = (index: number) => {
+  const handleStageClick = async (index: number) => {
     if (index !== trip.currentStageIndex || isProcessing) return;
 
-    // VALIDACIÓN: ODÓMETRO INICIAL (Al comenzar viaje - Etapa 0)
-    if (index === 0 && !trip.odometerStart) {
-        setOdometerValue('');
-        setShowOdometerModal({ show: true, type: 'START', pendingStageIndex: index });
-        return;
-    }
-
-    // VALIDACIÓN: ODÓMETRO FINAL (Al finalizar viaje - Etapa 6)
-    if (index === 6 && !trip.odometerEnd) {
-        setOdometerValue('');
-        setShowOdometerModal({ show: true, type: 'END', pendingStageIndex: index });
-        return;
-    }
-
-    // Si pasa las validaciones de odómetro, ejecuta la lógica normal
-    executeStageChange(index, trip);
-  };
-
-  const executeStageChange = async (index: number, currentTripData: Trip) => {
     const isStepUnloaded = index === 5; 
 
     if (isStepUnloaded) {
-        const hasEvidence = currentTripData.evidence.some(e => e.stageIndex === 5 && (!e.destinationId || e.destinationId === activeDest?.id));
+        const hasEvidence = trip.evidence.some(e => e.stageIndex === 5 && (!e.destinationId || e.destinationId === activeDest?.id));
         if (!hasEvidence) {
             alert("⚠️ REQUERIDO: Debes tomar al menos una foto de evidencia para confirmar la descarga.");
             playSound('alert');
@@ -538,9 +340,10 @@ export const TripDetail: React.FC<TripDetailProps> = ({ trip, onBack, onUpdateTr
       }
 
       const currentStageAsNumber = Number(nextStepIndex);
-      let newStatus = currentTripData.status;
-      const isTripFinished = nextStepIndex === 6; 
+      let newStatus = trip.status;
+      const isTripFinished = nextStepIndex === 6; // Si estamos en el paso 6 (index 5) y avanzamos, terminamos.
 
+      // CRÍTICO: Si el viaje finaliza, forzar estado COMPLETED
       if (isTripFinished) {
         newStatus = TripStatus.COMPLETED;
       } else if (nextStepIndex === 1) {
@@ -549,6 +352,7 @@ export const TripDetail: React.FC<TripDetailProps> = ({ trip, onBack, onUpdateTr
         newStatus = TripStatus.IN_TRANSIT;
       }
 
+      // 1. Actualizar DB Primero para que Realtime dispare a otros clientes
       const { data, error } = await supabase
         .from('viajes')
         .update({ 
@@ -556,24 +360,26 @@ export const TripDetail: React.FC<TripDetailProps> = ({ trip, onBack, onUpdateTr
           destinos_lista: updatedDestinations,
           status: newStatus 
         })
-        .eq('id', currentTripData.id) 
+        .eq('id', trip.id) 
         .select();
 
       if (error) throw error;
       
+      // 2. Enviar notificación
       const stageName = TRIP_STAGES[nextStepIndex]?.label || 'Siguiente Etapa';
       await supabase.from('notificaciones').insert({
         target_role: 'ADMIN',
         title: isTripFinished ? '🏁 VIAJE COMPLETADO' : '🚚 AVANCE DE RUTA',
         message: isTripFinished 
-            ? `La unidad ${currentTripData.plate} ha finalizado el viaje correctamente.`
-            : `Unidad ${currentTripData.plate} avanzó a: ${stageName}`,
+            ? `La unidad ${trip.plate} ha finalizado el viaje correctamente.`
+            : `Unidad ${trip.plate} avanzó a: ${stageName}`,
         type: isTripFinished ? 'success' : 'info',
-        metadata: { trip_id: currentTripData.id }
+        metadata: { trip_id: trip.id }
       });
 
+      // 3. Actualizar Estado Local
       const updatedTrip: Trip = { 
-        ...currentTripData, 
+        ...trip, 
         currentStageIndex: nextStepIndex,
         destinations: updatedDestinations,
         status: newStatus
@@ -582,6 +388,7 @@ export const TripDetail: React.FC<TripDetailProps> = ({ trip, onBack, onUpdateTr
       onUpdateTrip(updatedTrip);
       playSound('success');
       
+      // 4. Mostrar Modal si terminó
       if (isTripFinished) {
         setShowCompletionModal(true);
       }
@@ -649,6 +456,7 @@ export const TripDetail: React.FC<TripDetailProps> = ({ trip, onBack, onUpdateTr
           evidence_status: 'PENDING' 
       }).eq('id', trip.id);
 
+      // NOTIFICACIÓN AL ADMIN CON URL DE LA PRIMERA IMAGEN
       const evidenceImageUrl = newEvidences.length > 0 ? newEvidences[0].url : undefined;
       
       await supabase.from('notificaciones').insert({
@@ -658,7 +466,7 @@ export const TripDetail: React.FC<TripDetailProps> = ({ trip, onBack, onUpdateTr
           type: 'info',
           metadata: { 
               trip_id: trip.id,
-              image_url: evidenceImageUrl, 
+              image_url: evidenceImageUrl, // IMPORTANTE: Enviamos la URL para que se vea en el modal
               evidence_count: newEvidences.length
           }
       });
@@ -701,21 +509,11 @@ export const TripDetail: React.FC<TripDetailProps> = ({ trip, onBack, onUpdateTr
                         <p className="font-bold text-slate-800 text-xl leading-snug">{dest.name}</p>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div className="flex items-center space-x-4 bg-blue-50 p-4 rounded-xl border border-blue-100">
-                            <Calendar className="h-6 w-6 text-blue-600" />
-                            <div>
-                                <p className="text-xs text-slate-500 font-bold uppercase">Fecha de carga</p>
-                                <p className="text-lg font-black text-blue-900">{dest.date || trip.date}</p>
-                            </div>
-                        </div>
-                        
-                        <div className="flex items-center space-x-4 bg-blue-50 p-4 rounded-xl border border-blue-100">
-                            <Clock className="h-6 w-6 text-blue-600" />
-                            <div>
-                                <p className="text-xs text-slate-500 font-bold uppercase">Hora de carga</p>
-                                <p className="text-lg font-black text-blue-900">{dest.appointment || trip.appointment || 'Abierto'}</p>
-                            </div>
+                    <div className="flex items-center space-x-4 bg-blue-50 p-4 rounded-xl border border-blue-100">
+                        <Clock className="h-6 w-6 text-blue-600" />
+                        <div>
+                            <p className="text-xs text-slate-500 font-bold uppercase">Cita / Horario</p>
+                            <p className="text-xl font-black text-blue-900">{dest.appointment || trip.appointment || 'Abierto'}</p>
                         </div>
                     </div>
 
@@ -761,8 +559,6 @@ export const TripDetail: React.FC<TripDetailProps> = ({ trip, onBack, onUpdateTr
       </div>
     );
   }
-
-  const isCombustible = currentExpenseCategory === 'GASTOS' && expenseRows[0]?.concept?.includes('Combustible');
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50">
@@ -937,106 +733,43 @@ export const TripDetail: React.FC<TripDetailProps> = ({ trip, onBack, onUpdateTr
             );
           })}
         </div>
-
-        {/* BOTÓN DE PÁNICO (ASISTENCIA URGENTE) */}
-        <div className="mt-6 mb-8 px-2 animate-in fade-in slide-in-from-bottom-2">
-            <button 
-                onClick={handlePanicButton}
-                disabled={isPanicLoading}
-                className={`w-full py-5 rounded-3xl font-black text-xl text-white shadow-2xl flex items-center justify-center space-x-3 active:scale-95 transition-all border-b-8
-                    ${isPanicLoading ? 'bg-red-800 border-red-900 cursor-wait' : 'bg-red-600 border-red-800 hover:bg-red-500'}`}
-            >
-                {isPanicLoading ? (
-                    <Loader className="h-8 w-8 animate-spin" />
-                ) : (
-                    <>
-                        <Siren className="h-8 w-8 animate-pulse" />
-                        <span>ASISTENCIA URGENTE</span>
-                    </>
-                )}
-            </button>
-            <p className="text-center text-[10px] text-red-400 font-bold mt-2 uppercase tracking-wider">
-                Solo usar en caso de emergencia real
-            </p>
-        </div>
         
-        {/* SECCIÓN DE BOTONES DE GASTOS Y MANTENIMIENTO (NUEVO DISEÑO) */}
-        <div className="mt-8 px-2 space-y-4 pb-10">
-            <h4 className="text-center text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Panel de Control Operativo</h4>
-            
-            {/* BOTÓN GASTOS */}
-            <div className="flex flex-col">
+        {/* SECCIÓN DE BOTONES DE GASTOS Y REPORTES (AL FINAL DE LAS ETAPAS) */}
+        <div className="mt-8 bg-slate-100 p-4 rounded-3xl border border-slate-200">
+            <h4 className="text-center text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Centro de Costos y Reportes</h4>
+            <div className="grid grid-cols-1 gap-3">
                 <button 
-                    onClick={() => setShowGastosMenu(!showGastosMenu)}
-                    className="w-full py-5 rounded-3xl font-black text-xl text-white shadow-xl flex items-center justify-center space-x-3 active:scale-95 transition-all border-b-8 bg-emerald-600 border-emerald-800 hover:bg-emerald-500"
+                    onClick={() => handleOpenExpenseModal('OPERATIVO')}
+                    className="flex items-center justify-between w-full bg-white hover:bg-indigo-50 border-2 border-indigo-100 hover:border-indigo-300 p-4 rounded-xl transition-all shadow-sm group active:scale-[0.98]"
                 >
-                    <Wallet className="h-8 w-8" />
-                    <span>GASTOS</span>
-                    {showGastosMenu ? <ChevronUp className="h-6 w-6 ml-2" /> : <ChevronDown className="h-6 w-6 ml-2" />}
-                </button>
-                
-                {showGastosMenu && (
-                    <div className="mt-4 space-y-2 animate-in slide-in-from-top-2">
-                        {[
-                            { label: "1.- Combustible", icon: <Fuel className="h-5 w-5" /> },
-                            { label: "2.- Casetas efectivo", icon: <Ticket className="h-5 w-5" /> },
-                            { label: "3.- Viáticos", icon: <Wallet className="h-5 w-5" /> },
-                            { label: "4.- Reparaciones / Refacciones", icon: <Wrench className="h-5 w-5" /> },
-                            { label: "5.- Maniobras", icon: <Construction className="h-5 w-5" /> },
-                            { label: "6.- Permisos clave", icon: <Key className="h-5 w-5" /> },
-                            { label: "7.- Otros", icon: <Briefcase className="h-5 w-5" /> },
-                        ].map((item, idx) => (
-                            <button
-                                key={idx}
-                                onClick={() => handleOpenExpenseModal('GASTOS', item.label)}
-                                className="w-full py-3 rounded-2xl font-bold text-lg text-white shadow-md flex items-center justify-between px-6 active:scale-95 transition-all border-b-4 bg-emerald-500 border-emerald-700 hover:bg-emerald-400"
-                            >
-                                <div className="flex items-center space-x-3">
-                                    {item.icon}
-                                    <span>{item.label}</span>
-                                </div>
-                                <Plus className="h-5 w-5 text-emerald-200" />
-                            </button>
-                        ))}
+                    <div className="flex items-center">
+                        <div className="bg-indigo-100 p-3 rounded-lg mr-4 group-hover:bg-indigo-200"><Briefcase className="h-6 w-6 text-indigo-700" /></div>
+                        <div className="text-left"><span className="block font-black text-indigo-900 uppercase">Operativo</span><span className="text-xs text-indigo-500 font-bold">Casetas, Maniobras...</span></div>
                     </div>
-                )}
-            </div>
+                    <Plus className="h-5 w-5 text-indigo-300" />
+                </button>
 
-            {/* BOTÓN MANTENIMIENTO */}
-            <div className="flex flex-col">
                 <button 
-                    onClick={() => setShowMantenimientoMenu(!showMantenimientoMenu)}
-                    className="w-full py-5 rounded-3xl font-black text-xl text-white shadow-xl flex items-center justify-center space-x-3 active:scale-95 transition-all border-b-8 bg-orange-600 border-orange-800 hover:bg-orange-500"
+                    onClick={() => handleOpenExpenseModal('GASTOS')}
+                    className="flex items-center justify-between w-full bg-white hover:bg-emerald-50 border-2 border-emerald-100 hover:border-emerald-300 p-4 rounded-xl transition-all shadow-sm group active:scale-[0.98]"
                 >
-                    <Wrench className="h-8 w-8" />
-                    <span>MANTENIMIENTO</span>
-                    {showMantenimientoMenu ? <ChevronUp className="h-6 w-6 ml-2" /> : <ChevronDown className="h-6 w-6 ml-2" />}
-                </button>
-                
-                {showMantenimientoMenu && (
-                    <div className="mt-4 space-y-2 animate-in slide-in-from-top-2">
-                        <button
-                            onClick={() => handleOpenExpenseModal('MANTENIMIENTO', 'Reportar incidencia')}
-                            className="w-full py-3 rounded-2xl font-bold text-lg text-white shadow-md flex items-center justify-between px-6 active:scale-95 transition-all border-b-4 bg-orange-500 border-orange-700 hover:bg-orange-400"
-                        >
-                            <div className="flex items-center space-x-3">
-                                <FileText className="h-5 w-5" />
-                                <span>Reportar incidencia</span>
-                            </div>
-                            <Plus className="h-5 w-5 text-orange-200" />
-                        </button>
-                        <button
-                            onClick={() => handleOpenExpenseModal('MANTENIMIENTO', 'Reporte urgente')}
-                            className="w-full py-3 rounded-2xl font-bold text-lg text-white shadow-md flex items-center justify-between px-6 active:scale-95 transition-all border-b-4 bg-orange-500 border-orange-700 hover:bg-orange-400"
-                        >
-                            <div className="flex items-center space-x-3">
-                                <AlertTriangle className="h-5 w-5" />
-                                <span>Reporte urgente</span>
-                            </div>
-                            <Plus className="h-5 w-5 text-orange-200" />
-                        </button>
+                    <div className="flex items-center">
+                        <div className="bg-emerald-100 p-3 rounded-lg mr-4 group-hover:bg-emerald-200"><Wallet className="h-6 w-6 text-emerald-700" /></div>
+                        <div className="text-left"><span className="block font-black text-emerald-900 uppercase">Gastos</span><span className="text-xs text-emerald-500 font-bold">Viáticos, Comidas...</span></div>
                     </div>
-                )}
+                    <Plus className="h-5 w-5 text-emerald-300" />
+                </button>
+
+                <button 
+                    onClick={() => handleOpenExpenseModal('MANTENIMIENTO')}
+                    className="flex items-center justify-between w-full bg-white hover:bg-orange-50 border-2 border-orange-100 hover:border-orange-300 p-4 rounded-xl transition-all shadow-sm group active:scale-[0.98]"
+                >
+                    <div className="flex items-center">
+                        <div className="bg-orange-100 p-3 rounded-lg mr-4 group-hover:bg-orange-200"><Wrench className="h-6 w-6 text-orange-700" /></div>
+                        <div className="text-left"><span className="block font-black text-orange-900 uppercase">Mantenimiento</span><span className="text-xs text-orange-500 font-bold">Reparaciones, Piezas...</span></div>
+                    </div>
+                    <Plus className="h-5 w-5 text-orange-300" />
+                </button>
             </div>
         </div>
       </div>
@@ -1069,53 +802,6 @@ export const TripDetail: React.FC<TripDetailProps> = ({ trip, onBack, onUpdateTr
         </div>
       )}
 
-      {/* MODAL DE REGISTRO DE ODÓMETRO (NUEVO) */}
-      {showOdometerModal && (
-        <div className="fixed inset-0 z-[2200] bg-black/80 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in">
-            <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl p-6 relative overflow-hidden">
-                <div className="flex flex-col items-center mb-6">
-                    <div className="bg-blue-100 p-4 rounded-full mb-3 shadow-sm">
-                        <Gauge className="h-10 w-10 text-blue-600" />
-                    </div>
-                    <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight text-center">
-                        Registro de Odómetro
-                    </h3>
-                    <p className="text-sm font-bold text-slate-500 uppercase tracking-wide">
-                        {showOdometerModal.type === 'START' ? 'Kilometraje Inicial' : 'Kilometraje Final'}
-                    </p>
-                </div>
-                
-                <div className="mb-6">
-                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Ingrese Valor (KM)</label>
-                    <input 
-                        type="number"
-                        autoFocus
-                        value={odometerValue}
-                        onChange={(e) => setOdometerValue(e.target.value)}
-                        placeholder="000000"
-                        className="w-full text-center text-3xl font-black py-3 border-b-4 border-blue-500 focus:border-blue-700 outline-none bg-slate-50 rounded-t-lg"
-                    />
-                </div>
-
-                <div className="flex space-x-3">
-                    <button 
-                        onClick={() => { setShowOdometerModal(null); setOdometerValue(''); }}
-                        className="flex-1 bg-slate-200 text-slate-700 font-bold py-3 rounded-xl hover:bg-slate-300"
-                    >
-                        Cancelar
-                    </button>
-                    <button 
-                        onClick={handleSaveOdometer}
-                        disabled={isProcessing}
-                        className="flex-1 bg-blue-600 text-white font-bold py-3 rounded-xl hover:bg-blue-700 shadow-lg"
-                    >
-                        {isProcessing ? <Loader className="h-5 w-5 animate-spin mx-auto" /> : 'Guardar'}
-                    </button>
-                </div>
-            </div>
-        </div>
-      )}
-
       {/* MODAL DE GASTOS */}
       {showExpenseModal && (
         <div className="fixed inset-0 z-[2200] bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4">
@@ -1128,105 +814,50 @@ export const TripDetail: React.FC<TripDetailProps> = ({ trip, onBack, onUpdateTr
                         {currentExpenseCategory === 'OPERATIVO' && <Briefcase className="h-5 w-5 mr-2"/>}
                         {currentExpenseCategory === 'GASTOS' && <Wallet className="h-5 w-5 mr-2"/>}
                         {currentExpenseCategory === 'MANTENIMIENTO' && <Wrench className="h-5 w-5 mr-2"/>}
-                        {isCombustible ? 'Registro de Combustible' : `Registrar ${currentExpenseCategory}`}
+                        Registrar {currentExpenseCategory}
                     </h3>
                     <button onClick={() => setShowExpenseModal(false)} className="p-1 hover:bg-white/20 rounded-full"><X className="h-6 w-6" /></button>
                 </div>
                 
                 <div className="p-6 overflow-y-auto">
-                    {/* FORMULARIO ESPECÍFICO PARA COMBUSTIBLE */}
-                    {isCombustible ? (
-                        <div className="space-y-4 animate-in fade-in">
-                            <div>
-                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Odómetro Actual</label>
-                                <div className="relative">
-                                    <Gauge className="absolute left-3 top-3 h-5 w-5 text-emerald-500" />
+                    <div className="space-y-4">
+                        {expenseRows.map((row, index) => (
+                            <div key={index} className="flex gap-2 items-start animate-in fade-in slide-in-from-bottom-2">
+                                <div className="flex-grow space-y-2">
                                     <input 
-                                        type="number" 
-                                        placeholder="000000" 
-                                        className="w-full bg-slate-50 border border-slate-300 rounded-lg pl-10 pr-3 py-3 text-lg font-bold focus:ring-2 focus:ring-emerald-500 outline-none"
-                                        value={fuelOdometer}
-                                        onChange={(e) => setFuelOdometer(e.target.value)}
+                                        type="text" 
+                                        placeholder="Concepto (Ej. Caseta, Comida)" 
+                                        className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none"
+                                        value={row.concept}
+                                        onChange={(e) => handleExpenseChange(index, 'concept', e.target.value)}
                                     />
-                                </div>
-                            </div>
-                            
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Litros</label>
                                     <div className="relative">
-                                        <Fuel className="absolute left-3 top-3 h-5 w-5 text-emerald-500" />
+                                        <span className="absolute left-3 top-2 text-slate-400 font-bold">$</span>
                                         <input 
                                             type="number" 
                                             placeholder="0.00" 
-                                            className="w-full bg-slate-50 border border-slate-300 rounded-lg pl-10 pr-3 py-3 text-base font-bold focus:ring-2 focus:ring-emerald-500 outline-none"
-                                            value={fuelLiters}
-                                            onChange={(e) => setFuelLiters(e.target.value)}
+                                            className="w-full bg-slate-50 border border-slate-300 rounded-lg pl-6 pr-3 py-2 text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none"
+                                            value={row.amount || ''}
+                                            onChange={(e) => handleExpenseChange(index, 'amount', e.target.value)}
                                         />
                                     </div>
                                 </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Precio x Litro</label>
-                                    <div className="relative">
-                                        <span className="absolute left-3 top-3 text-emerald-500 font-bold">$</span>
-                                        <input 
-                                            type="number" 
-                                            placeholder="0.00" 
-                                            className="w-full bg-slate-50 border border-slate-300 rounded-lg pl-8 pr-3 py-3 text-base font-bold focus:ring-2 focus:ring-emerald-500 outline-none"
-                                            value={fuelPrice}
-                                            onChange={(e) => setFuelPrice(e.target.value)}
-                                        />
-                                    </div>
-                                </div>
+                                {expenseRows.length > 1 && (
+                                    <button onClick={() => handleRemoveExpenseRow(index)} className="mt-1 p-2 text-red-500 hover:bg-red-50 rounded-lg border border-transparent hover:border-red-200">
+                                        <Trash2 className="h-5 w-5" />
+                                    </button>
+                                )}
                             </div>
+                        ))}
+                    </div>
 
-                            <div className="bg-emerald-50 border border-emerald-100 p-4 rounded-xl flex justify-between items-center">
-                                <span className="text-sm font-bold text-emerald-800 uppercase">Importe Total</span>
-                                <span className="text-2xl font-black text-emerald-700">${fuelTotal.toFixed(2)}</span>
-                            </div>
-                        </div>
-                    ) : (
-                        /* FORMULARIO GENÉRICO PARA OTROS GASTOS */
-                        <div className="space-y-4">
-                            {expenseRows.map((row, index) => (
-                                <div key={index} className="flex gap-2 items-start animate-in fade-in slide-in-from-bottom-2">
-                                    <div className="flex-grow space-y-2">
-                                        <input 
-                                            type="text" 
-                                            placeholder="Concepto (Ej. Caseta, Comida)" 
-                                            className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none"
-                                            value={row.concept}
-                                            onChange={(e) => handleExpenseChange(index, 'concept', e.target.value)}
-                                        />
-                                        <div className="relative">
-                                            <span className="absolute left-3 top-2 text-slate-400 font-bold">$</span>
-                                            <input 
-                                                type="number" 
-                                                placeholder="0.00" 
-                                                className="w-full bg-slate-50 border border-slate-300 rounded-lg pl-6 pr-3 py-2 text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none"
-                                                value={row.amount || ''}
-                                                onChange={(e) => handleExpenseChange(index, 'amount', e.target.value)}
-                                            />
-                                        </div>
-                                    </div>
-                                    {expenseRows.length > 1 && (
-                                        <button onClick={() => handleRemoveExpenseRow(index)} className="mt-1 p-2 text-red-500 hover:bg-red-50 rounded-lg border border-transparent hover:border-red-200">
-                                            <Trash2 className="h-5 w-5" />
-                                        </button>
-                                    )}
-                                </div>
-                            ))}
-                            <button onClick={handleAddExpenseRow} className="mt-4 w-full py-2 border-2 border-dashed border-slate-300 text-slate-500 font-bold rounded-xl hover:bg-slate-50 hover:border-slate-400 transition-colors flex items-center justify-center text-sm">
-                                <Plus className="h-4 w-4 mr-2" /> AGREGAR OTRO CONCEPTO
-                            </button>
-                        </div>
-                    )}
+                    <button onClick={handleAddExpenseRow} className="mt-4 w-full py-2 border-2 border-dashed border-slate-300 text-slate-500 font-bold rounded-xl hover:bg-slate-50 hover:border-slate-400 transition-colors flex items-center justify-center text-sm">
+                        <Plus className="h-4 w-4 mr-2" /> AGREGAR OTRO CONCEPTO
+                    </button>
 
                     {/* SECCIÓN DE EVIDENCIAS FOTOGRÁFICAS EN EL MODAL */}
                     <div className="mt-6 border-t border-slate-100 pt-4">
-                        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">
-                            {isCombustible ? 'Comprobante / Ticket (Obligatorio)' : 'Evidencia (Opcional)'}
-                        </p>
+                        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Evidencia (Opcional)</p>
                         <button 
                             onClick={() => expenseFileInputRef.current?.click()}
                             disabled={isUploadingExpenseEvidence}

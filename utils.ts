@@ -1,74 +1,121 @@
+
+
 // Simulation of Push Notification Service
-export const requestNotificationPermission = async () => {
+export const requestNotificationPermission = async (): Promise<boolean> => {
   if (!('Notification' in window)) {
     console.log('This browser does not support desktop notification');
-    return;
+    return false;
   }
   
-  if (Notification.permission !== 'granted') {
+  if (Notification.permission === 'granted') {
+    return true;
+  }
+  
+  try {
     const permission = await Notification.requestPermission();
     return permission === 'granted';
+  } catch (error) {
+    console.error("Error requesting permission", error);
+    return false;
   }
-  return true;
 };
 
-export const sendPushNotification = async (toRole: 'ADMIN' | 'OPERATOR' | 'ALL', title: string, message: string) => {
-  console.log(`[PUSH to ${toRole}] ${title}: ${message}`);
+export const sendPushNotification = async (targetRole: 'ADMIN' | 'OPERATOR' | 'ALL', title: string, message: string) => {
+  console.log(`[INTENTO NOTIFICACIÓN] Para: ${targetRole} | Título: ${title}`);
   
-  // 1. Play Sound (In-App Feedback)
-  if (toRole === 'ADMIN') {
-    playSound('notification');
-  } else if (toRole === 'OPERATOR') {
+  // 1. Reproducir Sonido (Prioridad Alta)
+  // Usamos diferentes sonidos para diferenciar alertas críticas de informativas
+  const upperTitle = title.toUpperCase();
+  if (upperTitle.includes('NUEVO VIAJE') || upperTitle.includes('INCIDENCIA') || upperTitle.includes('RECHAZADA') || upperTitle.includes('PÁNICO') || upperTitle.includes('SOS') || upperTitle.includes('URGENTE')) {
     playSound('alert');
+  } else {
+    playSound('notification');
   }
 
-  // 2. Trigger System Notification (Service Worker)
-  if ('serviceWorker' in navigator && Notification.permission === 'granted') {
+  // 2. Verificar Permisos y Soporte
+  if (!('Notification' in window)) return;
+
+  if (Notification.permission !== 'granted') {
+    // Intentar pedir permiso si no está denegado explícitamente, aunque esto suele requerir gesto de usuario
+    if (Notification.permission !== 'denied') {
+        await Notification.requestPermission();
+    }
+  }
+
+  if (Notification.permission === 'granted') {
+    // Fix: vibrate is not in standard NotificationOptions type in some environments, so we cast to any
+    const options: any = {
+      body: message,
+      icon: 'https://tritex.com.mx/tlsicono.png', // Icono de la app
+      badge: 'https://tritex.com.mx/tlsicono.png',
+      vibrate: [200, 100, 200, 100, 200, 100, 200], // Patrón de vibración largo para llamar la atención
+      tag: 'tls-update-' + Date.now(), // Tag único para que se apilen y no se reemplacen
+      requireInteraction: true, // La notificación se queda hasta que el usuario la cierra
+      data: {
+        url: window.location.href
+      }
+    };
+
     try {
-      const registration = await navigator.serviceWorker.ready;
-      
-      // We use 'showNotification' from the SW registration to ensure it works on Mobile/Background
-      registration.showNotification(title, {
-        body: message,
-        icon: 'https://cdn-icons-png.flaticon.com/512/759/759988.png', // Truck Icon
-        vibrate: [500, 250, 500, 250, 500], // High Priority Pattern
-        tag: 'tls-alert', // Overwrite old alerts
-        requireInteraction: true, // Stays until clicked
-        data: { dateOfArrival: Date.now() }
-      } as any);
-      
-    } catch (e) {
-      console.error("Error showing notification via SW:", e);
-      // Fallback
-      new Notification(title, { body: message });
+      // MÉTODO A: Service Worker (Mejor para PWA / Android / Background)
+      if ('serviceWorker' in navigator) {
+        const registration = await navigator.serviceWorker.ready;
+        // Check if showNotification exists on registration (it should)
+        if (registration && 'showNotification' in registration) {
+            await registration.showNotification(title, options);
+            return;
+        }
+      }
+
+      // MÉTODO B: Fallback API Estándar (Escritorio / Navegador simple)
+      new Notification(title, options);
+    } catch (err) {
+      console.error("Fallo al enviar notificación nativa:", err);
+      // Fallback final: Alert nativo si todo falla (solo para pruebas extremas, usualmente molesto)
+      // alert(`${title}\n${message}`); 
     }
   }
 };
 
-export const playSound = (type: 'alert' | 'notification' | 'success') => {
+export const playSound = (type: 'alert' | 'notification' | 'success', loop: boolean = false): HTMLAudioElement | null => {
   let audioSrc = '';
   switch (type) {
     case 'alert':
-      audioSrc = 'https://codeskulptor-demos.commondatastorage.googleapis.com/GalaxyInvaders/pause.wav'; // Loud beep
+      // Sonido de Alarma fuerte (Siren/Alarm)
+      audioSrc = 'https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3'; 
       break;
     case 'notification':
-      audioSrc = 'https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3'; // Soft ping
+      // Sonido de "Ping" o "Glass"
+      audioSrc = 'https://assets.mixkit.co/active_storage/sfx/2344/2344-preview.mp3'; 
       break;
     case 'success':
-      audioSrc = 'https://assets.mixkit.co/active_storage/sfx/1435/1435-preview.mp3'; // Success chime
+      // Sonido positivo
+      audioSrc = 'https://assets.mixkit.co/active_storage/sfx/1435/1435-preview.mp3'; 
       break;
   }
   
   if (audioSrc) {
     const audio = new Audio(audioSrc);
-    audio.volume = 1.0; // Max volume for alerts
-    audio.play().catch(e => console.log('Audio autoplay blocked by browser policy', e));
+    audio.volume = 1.0; // Máximo volumen
+    
+    if (loop) {
+        audio.loop = true;
+    }
+
+    const playPromise = audio.play();
+    if (playPromise !== undefined) {
+      playPromise.catch((error) => {
+          console.warn('El navegador bloqueó la reproducción automática de sonido. Se requiere interacción previa del usuario.', error);
+      });
+    }
+    return audio;
   }
+  return null;
 };
 
 // --- GEOLOCATION & WATERMARKING SERVICES ---
 
-export const getCurrentLocation = (): Promise<{ lat: number; lng: number } | null> => {
+export const getCurrentLocation = (): Promise<{ lat: number; lng: number; accuracy: number } | null> => {
   return new Promise((resolve) => {
     if (!navigator.geolocation) {
       resolve(null);
@@ -79,13 +126,14 @@ export const getCurrentLocation = (): Promise<{ lat: number; lng: number } | nul
         resolve({
           lat: position.coords.latitude,
           lng: position.coords.longitude,
+          accuracy: position.coords.accuracy
         });
       },
       (error) => {
         console.error("Error getting location", error);
         resolve(null);
       },
-      { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 } // Timeout aumentado a 15s para mayor probabilidad de éxito
     );
   });
 };

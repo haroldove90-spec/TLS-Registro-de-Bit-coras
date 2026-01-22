@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Trip, User, TripStatus } from '../types';
 import { MapPin, Truck, ArrowRight, Clock, Briefcase, Bell } from 'lucide-react';
@@ -25,7 +26,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ trips, onSelectTrip, user 
           >
             {/* Status Indicator Bar */}
             <div className={`absolute left-0 top-0 bottom-0 w-1.5 
-              ${trip.status === TripStatus.IN_TRANSIT ? 'bg-green-500' : 
+              ${trip.status === TripStatus.IN_TRANSIT ? 'bg-indigo-500' : 
+                trip.status === TripStatus.COMPLETED ? 'bg-slate-400' :
                 trip.status === TripStatus.INCIDENT ? 'bg-red-500' : 
                 trip.status === TripStatus.PENDING_ACCEPTANCE ? 'bg-amber-400' : 'bg-blue-500'}`} 
             />
@@ -43,7 +45,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ trips, onSelectTrip, user 
               </div>
               <span className={`px-3 py-1 rounded-full text-xs font-medium border flex items-center
                 ${trip.status === TripStatus.IN_TRANSIT 
-                  ? 'bg-green-50 text-green-700 border-green-200' 
+                  ? 'bg-indigo-50 text-indigo-700 border-indigo-200' 
+                  : trip.status === TripStatus.COMPLETED
+                    ? 'bg-slate-100 text-slate-600 border-slate-200'
                   : trip.status === TripStatus.INCIDENT
                     ? 'bg-red-50 text-red-700 border-red-200 animate-pulse'
                     : trip.status === TripStatus.PENDING_ACCEPTANCE

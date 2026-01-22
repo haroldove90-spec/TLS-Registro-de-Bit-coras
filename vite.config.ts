@@ -1,8 +1,10 @@
 
+
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig(({ mode }) => {
+  // Fix: casting process to any to resolve TS error for cwd() method
   const env = loadEnv(mode, (process as any).cwd(), '');
   
   return {
@@ -10,7 +12,8 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: 'dist',
       sourcemap: false,
-      minify: 'terser',
+      // Usamos esbuild que es nativo de Vite para evitar errores por falta de dependencia 'terser'
+      minify: 'esbuild', 
       rollupOptions: {
         output: {
           manualChunks: {
@@ -19,9 +22,9 @@ export default defineConfig(({ mode }) => {
         }
       }
     },
-    // En produccion (Vercel), Vite expone automáticamente las variables VITE_*
+    // Definimos process.env para compatibilidad de librerías en el navegador
     define: {
-      'process.env.NODE_ENV': JSON.stringify(mode)
+      'process.env': {}
     },
     server: {
       port: 3000,
