@@ -486,18 +486,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ trips, onUpdateT
             columnStyles: { 0: { fontStyle: 'bold', cellWidth: 40 } }
         });
 
-        // 4. GASTOS DE COMBUSTIBLE Y OTROS (NUEVA SECCIÓN EN PDF)
+        // 4. GASTOS DE COMBUSTIBLE Y OTROS (ACTUALIZADO: OPERATIVO, GASTOS, MANTENIMIENTO)
         if (trip.extraCosts && trip.extraCosts.length > 0) {
             yPos = (doc as any).lastAutoTable.finalY + 8;
             if (yPos + 30 > 280) { doc.addPage(); yPos = 20; }
 
             doc.setFillColor(241, 245, 249);
             doc.rect(14, yPos - 4, 182, 6, 'F');
-            doc.text("4. REGISTRO DE GASTOS Y COMBUSTIBLE", 16, yPos);
+            doc.text("4. REGISTRO DE GASTOS, OPERATIVO Y MANTENIMIENTO", 16, yPos);
             yPos += 8;
 
             const expenseData: any[] = [];
+            let grandTotal = 0;
+
             trip.extraCosts.forEach(record => {
+                const hasEvidence = record.evidence && record.evidence.length > 0;
+                
                 record.items.forEach(item => {
                     let desc = item.concept;
                     
@@ -510,21 +514,38 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ trips, onUpdateT
                     if (item.liters && item.pricePerLiter) {
                         desc += ` (${item.liters}L a $${item.pricePerLiter}/L - Odo: ${item.odometer})`;
                     }
+
+                    // Indicar si hay evidencia (foto) asociada al registro
+                    if (hasEvidence) {
+                        desc += ' [EVIDENCIA ADJUNTA]';
+                    }
+
                     expenseData.push([
                         record.category,
                         desc,
                         `$${item.amount.toFixed(2)}`
                     ]);
+                    
+                    grandTotal += (item.amount || 0);
                 });
             });
+
+            // Fila de Total
+            expenseData.push([
+                { content: 'TOTAL ACUMULADO', colSpan: 2, styles: { halign: 'right', fontStyle: 'bold', fillColor: [240, 240, 240] } },
+                { content: `$${grandTotal.toFixed(2)}`, styles: { fontStyle: 'bold', fillColor: [240, 240, 240] } }
+            ]);
 
             autoTable(doc, {
                 startY: yPos,
                 head: [['Categoría', 'Concepto / Detalle', 'Monto']],
                 body: expenseData,
                 theme: 'striped',
-                styles: { fontSize: 7, cellPadding: 1 }, // Reducido para intentar caber en 1 hoja
-                columnStyles: { 2: { halign: 'right', fontStyle: 'bold' } }
+                styles: { fontSize: 7, cellPadding: 2, valign: 'middle' }, 
+                columnStyles: { 
+                    0: { fontStyle: 'bold', cellWidth: 25 },
+                    2: { halign: 'right', fontStyle: 'bold' } 
+                }
             });
         }
 
@@ -830,7 +851,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ trips, onUpdateT
                   <div className="bg-emerald-600 p-3 rounded-full shadow-inner"><Archive className="h-8 w-8" /></div>
               </div>
               
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50">
                         <tr>
@@ -894,7 +915,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ trips, onUpdateT
                 <div className="relative flex-grow w-full"><Search className="absolute left-3 top-3 h-5 w-5 text-gray-400" /><input type="text" placeholder="Buscar por Operario, Placas, Cliente..." value={filterText} onChange={(e) => setFilterText(e.target.value)} className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" /></div>
                 <div className="flex items-center space-x-2"><button onClick={() => setAudioEnabled(!audioEnabled)} className={`text-xs font-bold px-3 py-2 rounded-lg border ${audioEnabled ? 'bg-green-100 text-green-700 border-green-200' : 'bg-gray-100 text-gray-500 border-gray-200'}`}>Audio: {audioEnabled ? 'ON' : 'OFF'}</button></div>
             </div>
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50"><tr><th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unidad</th><th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estatus</th><th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cliente / Destino</th><th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Evidencia</th><th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th></tr></thead>
                     <tbody className="bg-white divide-y divide-gray-200">

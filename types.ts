@@ -88,6 +88,9 @@ export interface ExpenseItem {
   odometer?: number;
   liters?: number;
   pricePerLiter?: number;
+  // Campos nuevos para rendimiento
+  initialOdometer?: number;
+  performance?: string;
 }
 
 export interface ExpenseRecord {
