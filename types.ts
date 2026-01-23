@@ -83,7 +83,6 @@ export type ExpenseCategory = 'OPERATIVO' | 'GASTOS' | 'MANTENIMIENTO';
 
 export interface ExpenseItem {
   concept: string;
-  description?: string; // Nuevo campo para detalles manuales
   amount: number;
   // Campos específicos para Combustible
   odometer?: number;

@@ -9,7 +9,7 @@ import {
   Navigation, Camera, Loader, Fuel, Clock, RotateCcw, 
   ShieldAlert, RefreshCw, FileWarning, FileText, 
   ChevronRight, X, Image as ImageIcon, Plus, CheckCircle, UploadCloud, ExternalLink, Share2, Map, Building2, Calendar, MessageSquare, Truck,
-  Briefcase, Wrench, Wallet, Trash2, Save, Paperclip, Gauge, Siren, ChevronDown, ChevronUp, Ticket, Construction, Key, Activity, Edit3
+  Briefcase, Wrench, Wallet, Trash2, Save, Paperclip, Gauge, Siren, ChevronDown, ChevronUp, Ticket, Construction, Key, Activity
 } from 'lucide-react';
 
 interface TripDetailProps {
@@ -51,8 +51,7 @@ export const TripDetail: React.FC<TripDetailProps> = ({ trip, onBack, onUpdateTr
   // Estados para Gastos
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [currentExpenseCategory, setCurrentExpenseCategory] = useState<ExpenseCategory | null>(null);
-  // Usamos 'any' en el estado de filas para permitir que amount sea string vacío durante la edición y evitar bloqueos
-  const [expenseRows, setExpenseRows] = useState<any[]>([{ concept: '', description: '', amount: '' }]);
+  const [expenseRows, setExpenseRows] = useState<ExpenseItem[]>([{ concept: '', amount: 0 }]);
   const [expenseEvidence, setExpenseEvidence] = useState<Evidence[]>([]); 
   const [isSavingExpense, setIsSavingExpense] = useState(false);
   const [isUploadingExpenseEvidence, setIsUploadingExpenseEvidence] = useState(false);
@@ -212,9 +211,7 @@ export const TripDetail: React.FC<TripDetailProps> = ({ trip, onBack, onUpdateTr
   // --- LÓGICA DE GASTOS ---
   const handleOpenExpenseModal = (category: ExpenseCategory, initialConcept: string = '') => {
     setCurrentExpenseCategory(category);
-    // Inicializar amount como string vacío para evitar que aparezca un '0' difícil de borrar
-    // Se inicializa 'description' vacío
-    setExpenseRows([{ concept: initialConcept, description: '', amount: '' }]); 
+    setExpenseRows([{ concept: initialConcept, amount: 0 }]); 
     setExpenseEvidence([]); 
     
     // Resetear campos de combustible
@@ -228,7 +225,7 @@ export const TripDetail: React.FC<TripDetailProps> = ({ trip, onBack, onUpdateTr
   };
 
   const handleAddExpenseRow = () => {
-    setExpenseRows([...expenseRows, { concept: '', description: '', amount: '' }]);
+    setExpenseRows([...expenseRows, { concept: '', amount: 0 }]);
   };
 
   const handleRemoveExpenseRow = (index: number) => {
@@ -236,7 +233,7 @@ export const TripDetail: React.FC<TripDetailProps> = ({ trip, onBack, onUpdateTr
     setExpenseRows(expenseRows.filter((_, i) => i !== index));
   };
 
-  const handleExpenseChange = (index: number, field: string, value: string | number) => {
+  const handleExpenseChange = (index: number, field: keyof ExpenseItem, value: string | number) => {
     const newRows = [...expenseRows];
     newRows[index] = { ...newRows[index], [field]: value };
     setExpenseRows(newRows);
@@ -325,20 +322,12 @@ export const TripDetail: React.FC<TripDetailProps> = ({ trip, onBack, onUpdateTr
         total = fuelTotal;
     } else {
         // Validación genérica para otros gastos y mantenimientos (incluyendo reportes urgentes)
-        // Convertimos el input de amount (que puede ser string) a number
-        const processedRows = expenseRows.map(r => ({
-            concept: r.concept,
-            description: r.description,
-            amount: r.amount ? parseFloat(r.amount) : 0
-        }));
-
-        validRows = processedRows.filter(r => r.concept.trim() !== '');
-        
+        validRows = expenseRows.filter(r => r.concept.trim() !== '');
         if (validRows.length === 0) {
             alert("Agrega al menos una descripción.");
             return;
         }
-        total = validRows.reduce((sum, r) => sum + (r.amount || 0), 0);
+        total = validRows.reduce((sum, r) => sum + Number(r.amount || 0), 0);
     }
 
     setIsSavingExpense(true);
@@ -366,9 +355,7 @@ export const TripDetail: React.FC<TripDetailProps> = ({ trip, onBack, onUpdateTr
         // CONFIGURACIÓN DE NOTIFICACIÓN
         let notifTitle = '💰 GASTO REGISTRADO';
         let notifType: 'info' | 'alert' | 'success' = 'info';
-        // Incluir la descripción manual en la notificación si existe para dar más contexto
-        const conceptDetail = validRows[0].description ? `${validRows[0].concept} (${validRows[0].description})` : validRows[0].concept;
-        let notifMessage = `Unidad ${trip.plate} registró: ${currentExpenseCategory} - ${conceptDetail} ($${total.toFixed(2)}).`;
+        let notifMessage = `Unidad ${trip.plate} registró: ${currentExpenseCategory} ($${total.toFixed(2)}).`;
 
         if (isFuel) {
             notifTitle = '⛽ COMBUSTIBLE REGISTRADO';
@@ -376,10 +363,10 @@ export const TripDetail: React.FC<TripDetailProps> = ({ trip, onBack, onUpdateTr
         } else if (isUrgentMaintenance) {
             notifTitle = '🚨 REPORTE URGENTE - MANTENIMIENTO';
             notifType = 'alert'; // ESTO DISPARA LA ALARMA EN ADMIN
-            notifMessage = `⚠️ LA UNIDAD ${trip.plate} REPORTA FALLA URGENTE: ${conceptDetail}`;
+            notifMessage = `⚠️ LA UNIDAD ${trip.plate} REPORTA FALLA URGENTE: ${validRows[0].concept}`;
         } else if (currentExpenseCategory === 'MANTENIMIENTO') {
             notifTitle = '🔧 REPORTE MANTENIMIENTO';
-            notifMessage = `Unidad ${trip.plate} reporta incidencia: ${conceptDetail}`;
+            notifMessage = `Unidad ${trip.plate} reporta incidencia: ${validRows[0].concept}`;
         }
 
         await supabase.from('notificaciones').insert({
@@ -967,6 +954,28 @@ export const TripDetail: React.FC<TripDetailProps> = ({ trip, onBack, onUpdateTr
             </div>
         )}
 
+        {/* BOTÓN DE PÁNICO (ASISTENCIA URGENTE) */}
+        <div className="mt-6 mb-8 px-2 animate-in fade-in slide-in-from-bottom-2">
+            <button 
+                onClick={handlePanicButton}
+                disabled={isPanicLoading}
+                className={`w-full py-5 rounded-3xl font-black text-xl text-white shadow-2xl flex items-center justify-center space-x-3 active:scale-95 transition-all border-b-8
+                    ${isPanicLoading ? 'bg-red-800 border-red-900 cursor-wait' : 'bg-red-600 border-red-800 hover:bg-red-500'}`}
+            >
+                {isPanicLoading ? (
+                    <Loader className="h-8 w-8 animate-spin" />
+                ) : (
+                    <>
+                        <Siren className="h-8 w-8 animate-pulse" />
+                        <span>ASISTENCIA URGENTE</span>
+                    </>
+                )}
+            </button>
+            <p className="text-center text-[10px] text-red-400 font-bold mt-2 uppercase tracking-wider">
+                Solo usar en caso de emergencia real
+            </p>
+        </div>
+        
         {/* SECCIÓN DE BOTONES DE GASTOS Y MANTENIMIENTO (NUEVO DISEÑO) */}
         <div className="mt-8 px-2 space-y-4 pb-10">
             <h4 className="text-center text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Panel de Control Operativo</h4>
@@ -1045,28 +1054,6 @@ export const TripDetail: React.FC<TripDetailProps> = ({ trip, onBack, onUpdateTr
                     </div>
                 )}
             </div>
-        </div>
-
-        {/* BOTÓN DE PÁNICO (ASISTENCIA URGENTE) - MOVIDO AQUÍ */}
-        <div className="mt-6 mb-8 px-2 animate-in fade-in slide-in-from-bottom-2">
-            <button 
-                onClick={handlePanicButton}
-                disabled={isPanicLoading}
-                className={`w-full py-5 rounded-3xl font-black text-xl text-white shadow-2xl flex items-center justify-center space-x-3 active:scale-95 transition-all border-b-8
-                    ${isPanicLoading ? 'bg-red-800 border-red-900 cursor-wait' : 'bg-red-600 border-red-800 hover:bg-red-500'}`}
-            >
-                {isPanicLoading ? (
-                    <Loader className="h-8 w-8 animate-spin" />
-                ) : (
-                    <>
-                        <Siren className="h-8 w-8 animate-pulse" />
-                        <span>ASISTENCIA URGENTE</span>
-                    </>
-                )}
-            </button>
-            <p className="text-center text-[10px] text-red-400 font-bold mt-2 uppercase tracking-wider">
-                Solo usar en caso de emergencia real
-            </p>
         </div>
       </div>
 
@@ -1219,36 +1206,21 @@ export const TripDetail: React.FC<TripDetailProps> = ({ trip, onBack, onUpdateTr
                         <div className="space-y-4">
                             {expenseRows.map((row, index) => (
                                 <div key={index} className="flex gap-2 items-start animate-in fade-in slide-in-from-bottom-2">
-                                    <div className="flex-grow space-y-3">
-                                        <div className="bg-slate-50 p-2 rounded-lg border border-slate-200">
-                                            <input 
-                                                type="text" 
-                                                placeholder="Categoría / Concepto" 
-                                                className="w-full bg-transparent text-sm font-black text-slate-700 outline-none"
-                                                value={row.concept}
-                                                onChange={(e) => handleExpenseChange(index, 'concept', e.target.value)}
-                                            />
-                                        </div>
-                                        
-                                        {/* Nuevo campo de Descripción Manual solicitado */}
-                                        <div className="relative">
-                                            <Edit3 className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                                            <input 
-                                                type="text" 
-                                                placeholder="Descripción detallada (Opcional)" 
-                                                className="w-full bg-white border border-slate-300 rounded-lg pl-9 pr-3 py-2 text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none"
-                                                value={row.description || ''}
-                                                onChange={(e) => handleExpenseChange(index, 'description', e.target.value)}
-                                            />
-                                        </div>
-
+                                    <div className="flex-grow space-y-2">
+                                        <input 
+                                            type="text" 
+                                            placeholder="Concepto (Ej. Caseta, Comida)" 
+                                            className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none"
+                                            value={row.concept}
+                                            onChange={(e) => handleExpenseChange(index, 'concept', e.target.value)}
+                                        />
                                         <div className="relative">
                                             <span className="absolute left-3 top-2 text-slate-400 font-bold">$</span>
                                             <input 
                                                 type="number" 
                                                 placeholder="0.00" 
-                                                className="w-full bg-white border border-slate-300 rounded-lg pl-6 pr-3 py-2 text-lg font-bold focus:ring-2 focus:ring-blue-500 outline-none text-slate-900"
-                                                value={row.amount}
+                                                className="w-full bg-slate-50 border border-slate-300 rounded-lg pl-6 pr-3 py-2 text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none"
+                                                value={row.amount || ''}
                                                 onChange={(e) => handleExpenseChange(index, 'amount', e.target.value)}
                                             />
                                         </div>
