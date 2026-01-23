@@ -50,7 +50,7 @@ export const sendPushNotification = async (targetRole: 'ADMIN' | 'OPERATOR' | 'A
       badge: 'https://tritex.com.mx/tlsicono.png',
       vibrate: [200, 100, 200, 100, 200, 100, 200], // Patrón de vibración largo para llamar la atención
       tag: 'tls-update-' + Date.now(), // Tag único para que se apilen y no se reemplacen
-      requireInteraction: true, // La notificación se queda hasta que el usuario la cierra
+      requireInteraction: true, // La notificación se queda hasta que se cierre
       data: {
         url: window.location.href
       }
@@ -79,18 +79,19 @@ export const sendPushNotification = async (targetRole: 'ADMIN' | 'OPERATOR' | 'A
 
 export const playSound = (type: 'alert' | 'notification' | 'success', loop: boolean = false): HTMLAudioElement | null => {
   let audioSrc = '';
+  // Se han actualizado los links a Google Storage para garantizar disponibilidad y rapidez
   switch (type) {
     case 'alert':
-      // Sonido de Alarma fuerte (Siren/Alarm)
-      audioSrc = 'https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3'; 
+      // Sonido de Alarma fuerte (Siren/Alarm/Phone Ring)
+      audioSrc = 'https://commondatastorage.googleapis.com/codeskulptor-assets/week7-brrring.m4a'; 
       break;
     case 'notification':
-      // Sonido de "Ping" o "Glass"
-      audioSrc = 'https://assets.mixkit.co/active_storage/sfx/2344/2344-preview.mp3'; 
+      // Sonido de "Ping" o "Beep" (Corto)
+      audioSrc = 'https://codeskulptor-demos.commondatastorage.googleapis.com/GalaxyInvaders/pause.wav'; 
       break;
     case 'success':
-      // Sonido positivo
-      audioSrc = 'https://assets.mixkit.co/active_storage/sfx/1435/1435-preview.mp3'; 
+      // Sonido positivo (Pop/Coin)
+      audioSrc = 'https://codeskulptor-demos.commondatastorage.googleapis.com/pang/pop.mp3'; 
       break;
   }
   

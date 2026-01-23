@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { LogOut, Bell, BellOff, BellRing, X, Check, Trash2, Settings, Image as ImageIcon, Info, RefreshCw, Lock, MapPin, ExternalLink } from 'lucide-react';
 import { requestNotificationPermission, playSound } from './utils';
@@ -11,9 +12,10 @@ interface HeaderProps {
   notifications: AppNotification[];
   onMarkAsRead: (id: string) => void;
   onDeleteNotification: (id: string) => void;
+  onClearAll: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ userName, role, onLogout, notifications, onMarkAsRead, onDeleteNotification }) => {
+export const Header: React.FC<HeaderProps> = ({ userName, role, onLogout, notifications, onMarkAsRead, onDeleteNotification, onClearAll }) => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [showPanel, setShowPanel] = useState(false);
   const [selectedNotification, setSelectedNotification] = useState<AppNotification | null>(null);
@@ -187,7 +189,18 @@ export const Header: React.FC<HeaderProps> = ({ userName, role, onLogout, notifi
                         <h3 className="font-black text-slate-800 text-lg">Notificaciones</h3>
                         <p className="text-xs text-slate-500">Historial de alertas recientes</p>
                     </div>
-                    <button onClick={() => setShowPanel(false)} className="p-2 hover:bg-slate-200 rounded-full text-slate-500"><X className="h-5 w-5"/></button>
+                    <div className="flex items-center gap-2">
+                        {notifications.length > 0 && (
+                            <button 
+                                onClick={onClearAll}
+                                className="p-2 hover:bg-red-100 rounded-full text-slate-400 hover:text-red-500 transition-colors"
+                                title="Borrar Todas"
+                            >
+                                <Trash2 className="h-5 w-5" />
+                            </button>
+                        )}
+                        <button onClick={() => setShowPanel(false)} className="p-2 hover:bg-slate-200 rounded-full text-slate-500"><X className="h-5 w-5"/></button>
+                    </div>
                 </div>
                 
                 {permissionStatus !== 'granted' && (
@@ -334,12 +347,23 @@ export const Header: React.FC<HeaderProps> = ({ userName, role, onLogout, notifi
                              <p className="text-xs text-slate-400 mt-2">ID Viaje: {selectedNotification.metadata.trip_id}</p>
                         )}
                         
-                        <button 
-                            onClick={() => setSelectedNotification(null)}
-                            className="w-full mt-4 bg-slate-100 text-slate-600 font-bold py-3 rounded-xl hover:bg-slate-200 transition-colors"
-                        >
-                            Cerrar
-                        </button>
+                        <div className="flex gap-3 mt-4">
+                            <button 
+                                onClick={(e) => { 
+                                    if(selectedNotification) onDeleteNotification(selectedNotification.id); 
+                                    setSelectedNotification(null); 
+                                }}
+                                className="flex-1 bg-red-50 text-red-600 font-bold py-3 rounded-xl hover:bg-red-100 transition-colors border border-red-100 flex items-center justify-center"
+                            >
+                                <Trash2 className="h-4 w-4 mr-2" /> Eliminar
+                            </button>
+                            <button 
+                                onClick={() => setSelectedNotification(null)}
+                                className="flex-1 bg-slate-100 text-slate-600 font-bold py-3 rounded-xl hover:bg-slate-200 transition-colors"
+                            >
+                                Cerrar
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>

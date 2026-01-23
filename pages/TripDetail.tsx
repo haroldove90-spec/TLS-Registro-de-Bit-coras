@@ -553,13 +553,64 @@ export const TripDetail: React.FC<TripDetailProps> = ({ trip, onBack, onUpdateTr
     }
     setIsProcessing(false);
   };
+  
+  const handleShareLocation = async () => {
+    if (isSharingLocation) return;
+    setIsSharingLocation(true);
+    playSound('notification');
 
-  // ... (Rest of component functions: handleShareLocation, handleStageClick, executeStageChange, handlePhotoUpload)
-  // Re-implementing simplified versions or referencing existing ones to fit context
-  // NOTE: For brevity in this XML, I assume existing logic is preserved unless modified.
-  // The full component code is below.
+    try {
+        const location = await getCurrentLocation();
+        if (!location) {
+            alert("No se pudo obtener la ubicación. Verifique los permisos del GPS.");
+            setIsSharingLocation(false);
+            return;
+        }
 
-  // ... [Existing Logic] ...
+        const newReport: LocationReport = {
+            id: `manual-${Date.now()}`,
+            lat: location.lat,
+            lng: location.lng,
+            timestamp: Date.now(),
+            type: 'CHECKIN',
+            label: 'Ubicación Compartida Manualmente',
+            isOutOfRange: false
+        };
+
+        const updatedHistory = [...(trip.locationHistory || []), newReport];
+        const { error } = await supabase.from('viajes').update({ locationHistory: updatedHistory }).eq('id', trip.id);
+        
+        const { error: notifError } = await supabase.from('notificaciones').insert({
+            target_role: 'ADMIN',
+            title: '📍 UBICACIÓN COMPARTIDA',
+            message: `La unidad ${trip.plate} compartió su ubicación manual: ${location.lat.toFixed(5)}, ${location.lng.toFixed(5)}`,
+            type: 'info',
+            metadata: { 
+                trip_id: trip.id,
+                lat: location.lat,
+                lng: location.lng
+            }
+        });
+
+        if (notifError) {
+             console.error("Error enviando notificación:", notifError);
+             throw new Error("No se pudo enviar la alerta al administrador (Error BD).");
+        }
+
+        onUpdateTrip({ ...trip, locationHistory: updatedHistory });
+        playSound('success');
+        alert("✅ Ubicación enviada correctamente a la Torre de Control.");
+
+    } catch (error: any) {
+        console.error("Error compartiendo ubicación:", error);
+        alert(`Error al compartir: ${error.message || 'Intente nuevamente'}`);
+    } finally {
+        setIsSharingLocation(false);
+    }
+  };
+
+  // ... (Rest of component functions: handleStageClick, executeStageChange, handlePhotoUpload)
+  
   const handleStageClick = (index: number) => {
     if (index !== trip.currentStageIndex || isProcessing) return;
 
@@ -754,16 +805,20 @@ export const TripDetail: React.FC<TripDetailProps> = ({ trip, onBack, onUpdateTr
   
   const isCombustible = currentExpenseCategory === 'GASTOS' && expenseRows[0]?.concept?.includes('Combustible');
 
-  // --- CÁLCULO DE RENDIMIENTO PARA RENDERIZADO ---
-  const initialOdoVal = trip.odometerStart || 0;
+  // --- CÁLCULO DE RENDIMIENTO PARA RENDERIZADO (MEJORADO) ---
+  const initialOdoVal = Number(trip.odometerStart) || 0;
   const currentOdoVal = parseFloat(fuelOdometer) || 0;
   const litersVal = parseFloat(fuelLiters) || 0;
   
+  let distance = 0;
   let calculatedPerformance = "0.00 km/l";
-  if (currentOdoVal > initialOdoVal && litersVal > 0) {
-      const distance = currentOdoVal - initialOdoVal;
-      const perf = distance / litersVal;
-      calculatedPerformance = `${perf.toFixed(2)} km/l`;
+  
+  if (currentOdoVal > initialOdoVal) {
+      distance = currentOdoVal - initialOdoVal;
+      if (litersVal > 0) {
+        const perf = distance / litersVal;
+        calculatedPerformance = `${perf.toFixed(2)} km/l`;
+      }
   }
   // ---------------------------------------------
 
@@ -928,6 +983,24 @@ export const TripDetail: React.FC<TripDetailProps> = ({ trip, onBack, onUpdateTr
                         })}
                     </div>
                 </div>
+
+                {/* BOTÓN RESTAURADO: COMPARTIR UBICACIÓN */}
+                <button 
+                    onClick={handleShareLocation}
+                    disabled={isSharingLocation}
+                    className="w-full bg-white border-2 border-green-100 p-5 rounded-2xl shadow-sm flex items-center justify-between active:scale-[0.98] transition-all group hover:border-green-400"
+                >
+                    <div className="flex items-center">
+                        <div className="bg-green-100 p-4 rounded-xl mr-5 group-hover:bg-green-600 transition-colors">
+                             {isSharingLocation ? <Loader className="h-8 w-8 text-green-700 group-hover:text-white animate-spin" /> : <Share2 className="h-8 w-8 text-green-700 group-hover:text-white transition-colors" />}
+                        </div>
+                        <div className="text-left">
+                            <h4 className="text-lg font-black text-slate-800 uppercase tracking-tight">Compartir Ubicación</h4>
+                            <p className="text-sm text-slate-500 font-medium">{isSharingLocation ? 'Enviando...' : 'Reporte manual de GPS'}</p>
+                        </div>
+                    </div>
+                    <div className="bg-slate-50 p-3 rounded-full"><ChevronRight className="h-6 w-6 text-slate-400" /></div>
+                </button>
 
                 {trip.indicaciones_pdf_url && (
                     <button onClick={() => setShowPdfModal(true)} className="w-full bg-white border-2 border-blue-100 p-5 rounded-2xl shadow-sm flex items-center justify-between active:scale-[0.98] transition-all group hover:border-blue-400">
@@ -1142,6 +1215,14 @@ export const TripDetail: React.FC<TripDetailProps> = ({ trip, onBack, onUpdateTr
             </div>
         </div>
       </div>
+      
+      {/* Botón Flotante MOVIDO A LA IZQUIERDA para liberar notificaciones */}
+      <div className="fixed bottom-8 left-6 z-[10001] flex flex-col items-start space-y-4">
+          <button onClick={handleShareLocation} disabled={isSharingLocation} className={`p-6 rounded-full shadow-2xl border-4 border-white transition-all transform active:scale-90 ring-8 ${isSharingLocation ? 'bg-slate-400 ring-slate-200' : 'bg-green-600 ring-green-600/20'}`}>
+            {isSharingLocation ? <Loader className="h-8 w-8 text-white animate-spin" /> : <Share2 className="h-8 w-8 text-white" />}
+          </button>
+          <span className="bg-black/90 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow backdrop-blur-sm">{isSharingLocation ? 'Enviando...' : 'Enviar ubicación'}</span>
+      </div>
 
       {showCompletionModal && (
         <div className="fixed inset-0 z-[2000] bg-slate-900/90 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in duration-300">
@@ -1282,12 +1363,19 @@ export const TripDetail: React.FC<TripDetailProps> = ({ trip, onBack, onUpdateTr
                             </div>
                             
                             {/* NUEVO CAMPO: RENDIMIENTO DEL OPERADOR (CALCULADO) */}
-                            <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl flex justify-between items-center">
-                                <div className="flex items-center">
-                                    <Activity className="h-5 w-5 text-blue-600 mr-2" />
-                                    <span className="text-xs font-bold text-blue-800 uppercase">Rendimiento del Operador</span>
+                            <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl flex flex-col space-y-3">
+                                <div className="flex justify-between items-center">
+                                    <div className="flex items-center">
+                                        <Activity className="h-5 w-5 text-blue-600 mr-2" />
+                                        <span className="text-xs font-bold text-blue-800 uppercase">Rendimiento Calc.</span>
+                                    </div>
+                                    <span className="text-xl font-black text-blue-700">{calculatedPerformance}</span>
                                 </div>
-                                <span className="text-xl font-black text-blue-700">{calculatedPerformance}</span>
+                                
+                                <div className="w-full border-t border-blue-200 pt-2 flex justify-between items-center">
+                                     <span className="text-xs font-bold text-blue-500 uppercase">Distancia Recorrida</span>
+                                     <span className="text-sm font-black text-blue-600">{distance > 0 ? `${distance.toFixed(1)} km` : '---'}</span>
+                                </div>
                             </div>
 
                             <div className="bg-emerald-50 border border-emerald-100 p-4 rounded-xl flex justify-between items-center">

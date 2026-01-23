@@ -325,6 +325,26 @@ const App: React.FC = () => {
     await supabase.from('notificaciones').delete().eq('id', id);
   };
 
+  const handleClearAllNotifications = async () => {
+    if (notifications.length === 0) return;
+    if (!window.confirm("¿Estás seguro de eliminar todo el historial de notificaciones?")) return;
+
+    // 1. Detener todas las alarmas sonoras activas (Fix para sonidos estancados)
+    activeAlarmsRef.current.forEach(audio => {
+        audio.pause();
+        audio.currentTime = 0;
+    });
+    activeAlarmsRef.current.clear();
+
+    // 2. Limpiar los toasts visuales de la pantalla
+    setToasts([]); 
+
+    const ids = notifications.map(n => n.id);
+    setNotifications([]); // Optimistic update
+    
+    await supabase.from('notificaciones').delete().in('id', ids);
+  };
+
   const activeTrip = trips.find(t => t.id === selectedTripId);
 
   return (
@@ -337,6 +357,7 @@ const App: React.FC = () => {
           notifications={notifications}
           onMarkAsRead={markAsRead}
           onDeleteNotification={deleteNotification}
+          onClearAll={handleClearAllNotifications}
         />
       )}
 
